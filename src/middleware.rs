@@ -144,18 +144,7 @@ mod tests {
         // TODO more
     }
 
-    #[test]
-    fn test_extract_form() {
-        let rng = SystemRandom::new();
-        let (_, key_bytes) = Ed25519KeyPair::generate_serializable(&rng).unwrap();
-        let key_pair = Ed25519KeyPair::from_bytes(&key_bytes.private_key,
-                                                  &key_bytes.public_key).unwrap();
-        let protect = Ed25519CsrfProtection::new(key_pair,
-                                                 key_bytes.public_key.to_vec(),
-                                                 None);
-        let token = protect.generate_token();
-
-    }
+    // TODO test form extraction
     // TODO test query extraction
     // TODO test headers extraction
 }

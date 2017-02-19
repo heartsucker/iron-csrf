@@ -3,6 +3,8 @@ use std::mem;
 
 use chrono::Duration;
 use chrono::prelude::*;
+use ring::hmac;
+use ring::hmac::SigningKey;
 use ring::signature;
 use ring::signature::Ed25519KeyPair;
 use rustc_serialize::json;
@@ -72,22 +74,52 @@ impl CsrfProtection for Ed25519CsrfProtection {
     }
 
     fn validate_token(&self, token: &CsrfToken) -> Result<bool, String> {
-        if UTC::now() >= token.expires {
-            return Ok(false)
-        }
-
         let expires_bytes = datetime_bytes(token.expires);
 		let msg = untrusted::Input::from(expires_bytes.as_ref());
 		let sig = untrusted::Input::from(token.signature.as_slice());
-		Ok(signature::verify(&signature::ED25519,
-							 untrusted::Input::from(self.pub_key.as_slice()),
-                             msg, sig).is_ok())
+		let valid_sig = signature::verify(&signature::ED25519,
+							              untrusted::Input::from(self.pub_key.as_slice()),
+                                          msg, sig).is_ok();
+        Ok(valid_sig && UTC::now() < token.expires)
+	}
+}
+
+pub struct HmacCsrfProtection {
+    key: SigningKey,
+    ttl_ms: i64,
+}
+
+impl HmacCsrfProtection {
+    pub fn new(key: SigningKey, ttl_ms: Option<i64>) -> Self {
+        HmacCsrfProtection {
+            key: key,
+            ttl_ms: ttl_ms.unwrap_or(3_600_000),
+        }
+    }
+}
+
+impl CsrfProtection for HmacCsrfProtection {
+    fn generate_token(&self) -> Result<CsrfToken, String> {
+        let expires = UTC::now() + Duration::milliseconds(self.ttl_ms);
+		let expires_bytes = datetime_bytes(expires);
+        let msg = expires_bytes.as_ref();
+        let sig = hmac::sign(&self.key, msg);
+		Ok(CsrfToken::new(expires, Vec::from(sig.as_ref())))
+    }
+
+    fn validate_token(&self, token: &CsrfToken) -> Result<bool, String> {
+        let expires_bytes = datetime_bytes(token.expires);
+		let msg = expires_bytes.as_ref();
+		let sig = token.signature.as_slice();
+		let valid_sig = hmac::verify_with_own_key(&self.key, msg, sig).is_ok();
+        Ok(valid_sig && UTC::now() < token.expires)
 	}
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ring::digest;
     use ring::rand::SystemRandom;
 
     #[test]
@@ -127,6 +159,35 @@ mod tests {
         let protect = Ed25519CsrfProtection::new(key_pair,
                                                  key_bytes.public_key.to_vec(),
                                                  Some(-1));
+
+        // check the token is invalid
+        let token = protect.generate_token().unwrap();
+        assert!(!protect.validate_token(&token).unwrap());
+    }
+
+    #[test]
+    fn test_hmac_csrf_protection() {
+        let rng = SystemRandom::new();
+        let key = SigningKey::generate(&digest::SHA512, &rng).unwrap();
+        let protect = HmacCsrfProtection::new(key, None);
+
+        // check token validates
+        let token = protect.generate_token().unwrap();
+        assert!(protect.validate_token(&token).unwrap());
+
+        // check modified token doesn't validate
+        let mut token = protect.generate_token().unwrap();
+        token.expires = token.expires + Duration::milliseconds(1);
+        assert!(!protect.validate_token(&token).unwrap());
+
+        // check modified signature doesn't validate
+        let mut token = protect.generate_token().unwrap();
+        token.signature[0] = token.signature[0] ^ 0x07;
+        assert!(!protect.validate_token(&token).unwrap());
+
+        // create a new protection with ttl = -1 for tokens that are never valid
+        let key = SigningKey::generate(&digest::SHA512, &rng).unwrap();
+        let protect = HmacCsrfProtection::new(key, Some(-1));
 
         // check the token is invalid
         let token = protect.generate_token().unwrap();
