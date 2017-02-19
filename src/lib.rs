@@ -1,5 +1,6 @@
 extern crate chrono;
-#[macro_use] extern crate hyper;
+#[macro_use]
+extern crate hyper;
 extern crate iron;
 extern crate ring;
 extern crate rustc_serialize;

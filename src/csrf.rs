@@ -13,9 +13,7 @@ use rustc_serialize::base64::{ToBase64, FromBase64, STANDARD};
 use untrusted;
 
 fn datetime_bytes(date: DateTime<UTC>) -> [u8; 12] {
-    unsafe {
-        mem::transmute::<DateTime<UTC>, [u8; 12]>(date)
-    }
+    unsafe { mem::transmute::<DateTime<UTC>, [u8; 12]>(date) }
 }
 
 #[derive(Eq, PartialEq, Debug, RustcEncodable, RustcDecodable)]
@@ -37,7 +35,9 @@ impl CsrfToken {
     }
 
     pub fn parse_b64(string: &str) -> Option<Self> {
-        string.as_bytes().from_base64().ok()
+        string.as_bytes()
+            .from_base64()
+            .ok()
             .and_then(|s| str::from_utf8(&s).ok().map(|s| s.to_string()))
             .and_then(|s| json::decode(&s.as_str()).ok())
     }
@@ -49,39 +49,41 @@ pub trait CsrfProtection: Send + Sync {
 }
 
 pub struct Ed25519CsrfProtection {
-	key_pair: Ed25519KeyPair,
-	pub_key: Vec<u8>,
+    key_pair: Ed25519KeyPair,
+    pub_key: Vec<u8>,
     ttl_ms: i64,
 }
 
 impl Ed25519CsrfProtection {
-	pub fn new(key_pair: Ed25519KeyPair, pub_key: Vec<u8>, ttl_ms: Option<i64>) -> Self {
-		Ed25519CsrfProtection {
-			key_pair: key_pair,
-			pub_key: pub_key,
+    pub fn new(key_pair: Ed25519KeyPair, pub_key: Vec<u8>, ttl_ms: Option<i64>) -> Self {
+        Ed25519CsrfProtection {
+            key_pair: key_pair,
+            pub_key: pub_key,
             ttl_ms: ttl_ms.unwrap_or(3_600_000),
         }
-	}
+    }
 }
 
 impl CsrfProtection for Ed25519CsrfProtection {
     fn generate_token(&self) -> Result<CsrfToken, String> {
         let expires = UTC::now() + Duration::milliseconds(self.ttl_ms);
-		let expires_bytes = datetime_bytes(expires);
+        let expires_bytes = datetime_bytes(expires);
         let msg = expires_bytes.as_ref();
-		let sig = Vec::from(self.key_pair.sign(msg).as_slice());
-		Ok(CsrfToken::new(expires, sig))
+        let sig = Vec::from(self.key_pair.sign(msg).as_slice());
+        Ok(CsrfToken::new(expires, sig))
     }
 
     fn validate_token(&self, token: &CsrfToken) -> Result<bool, String> {
         let expires_bytes = datetime_bytes(token.expires);
-		let msg = untrusted::Input::from(expires_bytes.as_ref());
-		let sig = untrusted::Input::from(token.signature.as_slice());
-		let valid_sig = signature::verify(&signature::ED25519,
-							              untrusted::Input::from(self.pub_key.as_slice()),
-                                          msg, sig).is_ok();
+        let msg = untrusted::Input::from(expires_bytes.as_ref());
+        let sig = untrusted::Input::from(token.signature.as_slice());
+        let valid_sig = signature::verify(&signature::ED25519,
+                                          untrusted::Input::from(self.pub_key.as_slice()),
+                                          msg,
+                                          sig)
+            .is_ok();
         Ok(valid_sig && UTC::now() < token.expires)
-	}
+    }
 }
 
 pub struct HmacCsrfProtection {
@@ -101,19 +103,19 @@ impl HmacCsrfProtection {
 impl CsrfProtection for HmacCsrfProtection {
     fn generate_token(&self) -> Result<CsrfToken, String> {
         let expires = UTC::now() + Duration::milliseconds(self.ttl_ms);
-		let expires_bytes = datetime_bytes(expires);
+        let expires_bytes = datetime_bytes(expires);
         let msg = expires_bytes.as_ref();
         let sig = hmac::sign(&self.key, msg);
-		Ok(CsrfToken::new(expires, Vec::from(sig.as_ref())))
+        Ok(CsrfToken::new(expires, Vec::from(sig.as_ref())))
     }
 
     fn validate_token(&self, token: &CsrfToken) -> Result<bool, String> {
         let expires_bytes = datetime_bytes(token.expires);
-		let msg = expires_bytes.as_ref();
-		let sig = token.signature.as_slice();
-		let valid_sig = hmac::verify_with_own_key(&self.key, msg, sig).is_ok();
+        let msg = expires_bytes.as_ref();
+        let sig = token.signature.as_slice();
+        let valid_sig = hmac::verify_with_own_key(&self.key, msg, sig).is_ok();
         Ok(valid_sig && UTC::now() < token.expires)
-	}
+    }
 }
 
 #[cfg(test)]
@@ -133,11 +135,9 @@ mod tests {
     fn test_ed25519_csrf_protection() {
         let rng = SystemRandom::new();
         let (_, key_bytes) = Ed25519KeyPair::generate_serializable(&rng).unwrap();
-        let key_pair = Ed25519KeyPair::from_bytes(&key_bytes.private_key,
-                                                  &key_bytes.public_key).unwrap();
-        let protect = Ed25519CsrfProtection::new(key_pair,
-                                                 key_bytes.public_key.to_vec(),
-                                                 None);
+        let key_pair = Ed25519KeyPair::from_bytes(&key_bytes.private_key, &key_bytes.public_key)
+            .unwrap();
+        let protect = Ed25519CsrfProtection::new(key_pair, key_bytes.public_key.to_vec(), None);
 
         // check token validates
         let token = protect.generate_token().unwrap();
@@ -154,11 +154,9 @@ mod tests {
         assert!(!protect.validate_token(&token).unwrap());
 
         // create a new protection with ttl = -1 for tokens that are never valid
-        let key_pair = Ed25519KeyPair::from_bytes(&key_bytes.private_key,
-                                                  &key_bytes.public_key).unwrap();
-        let protect = Ed25519CsrfProtection::new(key_pair,
-                                                 key_bytes.public_key.to_vec(),
-                                                 Some(-1));
+        let key_pair = Ed25519KeyPair::from_bytes(&key_bytes.private_key, &key_bytes.public_key)
+            .unwrap();
+        let protect = Ed25519CsrfProtection::new(key_pair, key_bytes.public_key.to_vec(), Some(-1));
 
         // check the token is invalid
         let token = protect.generate_token().unwrap();

@@ -16,8 +16,8 @@ fn main() {
     // generate some crypto keys
     let rng = SystemRandom::new();
     let (_, key_bytes) = Ed25519KeyPair::generate_serializable(&rng).unwrap();
-    let key_pair = Ed25519KeyPair::from_bytes(&key_bytes.private_key,
-                                              &key_bytes.public_key).unwrap();
+    let key_pair = Ed25519KeyPair::from_bytes(&key_bytes.private_key, &key_bytes.public_key)
+        .unwrap();
 
     // initialize the CSRF protection
     let protect = Ed25519CsrfProtection::new(key_pair,
@@ -27,7 +27,7 @@ fn main() {
     let middleware = CsrfProtectionMiddleware::new(protect);
 
     // build the middleware chain
-    let mut chain = Chain::new(index); 
+    let mut chain = Chain::new(index);
     chain.link_before(middleware);
 
     // awwwww yissssssss
@@ -37,9 +37,7 @@ fn main() {
 
 fn index(request: &mut Request) -> IronResult<Response> {
     let mut response = match request.method {
-        method::Post => {
-            Response::with((status::Ok, include_str!("./post.html")))
-        }
+        method::Post => Response::with((status::Ok, include_str!("./post.html"))),
         _ => {
             let token = request.extensions.get::<CsrfToken>().unwrap();
 
@@ -51,7 +49,7 @@ fn index(request: &mut Request) -> IronResult<Response> {
             Response::with((status::Ok, html))
         }
     };
-    
+
     response.headers.set(ContentType::html());
 
     Ok(response)

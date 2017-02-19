@@ -14,14 +14,11 @@ header! { (XCsrfToken, "X-CSRF-Token") => [String] }
 
 pub struct CsrfProtectionMiddleware<T: CsrfProtection> {
     protect: T,
-    // TODO add ttl
 }
 
-impl <T: CsrfProtection> CsrfProtectionMiddleware<T> {
+impl<T: CsrfProtection> CsrfProtectionMiddleware<T> {
     pub fn new(protect: T) -> Self {
-        CsrfProtectionMiddleware {
-            protect: protect,
-        }
+        CsrfProtectionMiddleware { protect: protect }
     }
 
     fn validate_request(&self, mut request: &mut Request) -> IronResult<()> {
@@ -32,12 +29,17 @@ impl <T: CsrfProtection> CsrfProtectionMiddleware<T> {
                     Some(token) => {
                         match self.protect.validate_token(&token) {
                             Ok(true) => Ok(()),
-                            Ok(false) => Err(IronError::new(CsrfError::TokenInvalid, status::Forbidden)),
-                            Err(_) => Err(IronError::new(CsrfError::TokenValidationError, status::InternalServerError)),
+                            Ok(false) => {
+                                Err(IronError::new(CsrfError::TokenInvalid, status::Forbidden))
+                            }
+                            Err(_) => {
+                                Err(IronError::new(CsrfError::TokenValidationError,
+                                                   status::InternalServerError))
+                            }
                         }
-                    },
+                    }
                 }
-            },
+            }
             _ => Ok(()),
         }
     }
@@ -51,7 +53,8 @@ impl <T: CsrfProtection> CsrfProtectionMiddleware<T> {
     }
 
     fn extract_csrf_token_from_form(&self, mut request: &mut Request) -> Option<CsrfToken> {
-        let token = request.get_ref::<UrlEncodedBody>().ok()
+        let token = request.get_ref::<UrlEncodedBody>()
+            .ok()
             .and_then(|form| form.get("csrf-token"))
             .and_then(|v| v.first())
             .and_then(|token_str| CsrfToken::parse_b64(token_str));
@@ -62,8 +65,9 @@ impl <T: CsrfProtection> CsrfProtectionMiddleware<T> {
     }
 
     fn extract_csrf_token_from_query(&self, mut request: &mut Request) -> Option<CsrfToken> {
-        let token = request.get_ref::<UrlEncodedQuery>().ok()
-            .and_then(|query| query.get("x-csrf-token"))
+        let token = request.get_ref::<UrlEncodedQuery>()
+            .ok()
+            .and_then(|query| query.get("csrf-token"))
             .and_then(|v| v.first())
             .and_then(|token_str| CsrfToken::parse_b64(token_str));
 
@@ -73,7 +77,8 @@ impl <T: CsrfProtection> CsrfProtectionMiddleware<T> {
     }
 
     fn extract_csrf_token_from_headers(&self, mut request: &mut Request) -> Option<CsrfToken> {
-        let token = request.headers.get::<XCsrfToken>()
+        let token = request.headers
+            .get::<XCsrfToken>()
             .and_then(|token_str| CsrfToken::parse_b64(token_str));
 
         let _ = request.headers.remove::<XCsrfToken>();
@@ -106,7 +111,7 @@ impl typemap::Key for CsrfToken {
     type Value = CsrfToken;
 }
 
-impl <T: CsrfProtection + 'static>BeforeMiddleware for CsrfProtectionMiddleware<T> {
+impl<T: CsrfProtection + 'static> BeforeMiddleware for CsrfProtectionMiddleware<T> {
     fn before(&self, request: &mut Request) -> IronResult<()> {
         try!(self.validate_request(request));
 
@@ -114,8 +119,10 @@ impl <T: CsrfProtection + 'static>BeforeMiddleware for CsrfProtectionMiddleware<
             Ok(token) => {
                 let _ = request.extensions.insert::<CsrfToken>(token);
                 Ok(())
-            },
-            Err(_) => Err(IronError::new(CsrfError::TokenGenerationError, status::InternalServerError)),
+            }
+            Err(_) => {
+                Err(IronError::new(CsrfError::TokenGenerationError, status::InternalServerError))
+            }
         }
     }
 
@@ -135,13 +142,12 @@ mod tests {
     fn test_ed25519_middleware() {
         let rng = SystemRandom::new();
         let (_, key_bytes) = Ed25519KeyPair::generate_serializable(&rng).unwrap();
-        let key_pair = Ed25519KeyPair::from_bytes(&key_bytes.private_key,
-                                                  &key_bytes.public_key).unwrap();
-        let protect = Ed25519CsrfProtection::new(key_pair,
-                                                 key_bytes.public_key.to_vec(),
-                                                 None);
+        let key_pair = Ed25519KeyPair::from_bytes(&key_bytes.private_key, &key_bytes.public_key)
+            .unwrap();
+        let protect = Ed25519CsrfProtection::new(key_pair, key_bytes.public_key.to_vec(), None);
         let _ = CsrfProtectionMiddleware::new(protect);
-        // TODO more
+
+        // TODO test chain
     }
 
     // TODO test form extraction
