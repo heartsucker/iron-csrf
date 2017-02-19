@@ -5,7 +5,7 @@ authors = ["heartsucker <heartsucker@autistici.org>"]
 description = "CSRF protection for the web framework Iron"
 repository = "https://github.com/heartsucker/iron-csrf"
 readme = "README.md"
-license-file = "LICENSE"
+license = "MIT"
 keywords = [ "iron", "csrf", "web", "security" ]
 
 [dependencies]
