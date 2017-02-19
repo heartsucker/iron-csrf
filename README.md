@@ -1,4 +1,4 @@
-# iron-crsf
+# iron-csrf
 
 CSRF protection for the Rust webframework Iron.
 
