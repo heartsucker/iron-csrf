@@ -1,6 +1,6 @@
 [package]
 name = "iron-csrf"
-version = "0.0.1"
+version = "0.0.2"
 authors = ["heartsucker <heartsucker@autistici.org>"]
 description = "CSRF protection for the web framework Iron"
 repository = "https://github.com/heartsucker/iron-csrf"
@@ -9,10 +9,11 @@ license-file = "LICENSE"
 keywords = [ "iron", "csrf", "web", "security" ]
 
 [dependencies]
+chrono = { version = "^0.3", features = [ "rustc-serialize" ] }
+hyper = "^0.10"
 iron = "^0.5"
 ring = "^0.6"
 rustc-serialize = "^0.3"
-time = "^0.1"
 untrusted = "^0.3"
 urlencoded = "^0.5"
 

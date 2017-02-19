@@ -10,6 +10,8 @@ use urlencoded::{UrlEncodedQuery, UrlEncodedBody};
 
 use csrf::{CsrfProtection, CsrfToken};
 
+header! { (XCsrfToken, "X-CSRF-Token") => [String] }
+
 pub struct CsrfProtectionMiddleware<T: CsrfProtection> {
     protect: T,
     // TODO add ttl
@@ -41,28 +43,42 @@ impl <T: CsrfProtection> CsrfProtectionMiddleware<T> {
     }
 
     fn extract_csrf_token(&self, mut request: &mut Request) -> Option<CsrfToken> {
-        // TODO headers X-CSRF-Token        
-        // TODO form field csrf-token
         let f_token = self.extract_csrf_token_from_form(&mut request);
         let q_token = self.extract_csrf_token_from_query(&mut request);
+        let h_token = self.extract_csrf_token_from_headers(&mut request);
 
-        f_token.or(q_token)
+        f_token.or(q_token).or(h_token)
     }
 
     fn extract_csrf_token_from_form(&self, mut request: &mut Request) -> Option<CsrfToken> {
-        request.get_ref::<UrlEncodedBody>().ok()
+        let token = request.get_ref::<UrlEncodedBody>().ok()
             .and_then(|form| form.get("csrf-token"))
             .and_then(|v| v.first())
-            .and_then(|token_str| CsrfToken::parse_b64(token_str))
-        // TODO remove token from form 
+            .and_then(|token_str| CsrfToken::parse_b64(token_str));
+
+        // TODO remove token from form
+
+        token
     }
 
     fn extract_csrf_token_from_query(&self, mut request: &mut Request) -> Option<CsrfToken> {
-        request.get_ref::<UrlEncodedQuery>().ok()
+        let token = request.get_ref::<UrlEncodedQuery>().ok()
             .and_then(|query| query.get("x-csrf-token"))
             .and_then(|v| v.first())
-            .and_then(|token_str| CsrfToken::parse_b64(token_str))
+            .and_then(|token_str| CsrfToken::parse_b64(token_str));
+
         // TODO remove token from query
+
+        token
+    }
+
+    fn extract_csrf_token_from_headers(&self, mut request: &mut Request) -> Option<CsrfToken> {
+        let token = request.headers.get::<XCsrfToken>()
+            .and_then(|token_str| CsrfToken::parse_b64(token_str));
+
+        let _ = request.headers.remove::<XCsrfToken>();
+
+        token
     }
 }
 
@@ -119,9 +135,27 @@ mod tests {
     fn test_ed25519_middleware() {
         let rng = SystemRandom::new();
         let (_, key_bytes) = Ed25519KeyPair::generate_serializable(&rng).unwrap();
-        let key_pair = Ed25519KeyPair::from_bytes(&key_bytes.private_key, &key_bytes.public_key).unwrap();
-        let protect = Ed25519CsrfProtection::new(key_pair, key_bytes.public_key.to_vec());
+        let key_pair = Ed25519KeyPair::from_bytes(&key_bytes.private_key,
+                                                  &key_bytes.public_key).unwrap();
+        let protect = Ed25519CsrfProtection::new(key_pair,
+                                                 key_bytes.public_key.to_vec(),
+                                                 None);
         let _ = CsrfProtectionMiddleware::new(protect);
         // TODO more
     }
+
+    #[test]
+    fn test_extract_form() {
+        let rng = SystemRandom::new();
+        let (_, key_bytes) = Ed25519KeyPair::generate_serializable(&rng).unwrap();
+        let key_pair = Ed25519KeyPair::from_bytes(&key_bytes.private_key,
+                                                  &key_bytes.public_key).unwrap();
+        let protect = Ed25519CsrfProtection::new(key_pair,
+                                                 key_bytes.public_key.to_vec(),
+                                                 None);
+        let token = protect.generate_token();
+
+    }
+    // TODO test query extraction
+    // TODO test headers extraction
 }

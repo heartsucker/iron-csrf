@@ -21,7 +21,9 @@ fn main() {
 
     // initialize the CSRF protection
     let protect = Ed25519CsrfProtection::new(key_pair,
-                                             key_bytes.public_key.to_vec());
+                                             key_bytes.public_key.to_vec(),
+                                             // use the default TTL
+                                             None);
     let middleware = CsrfProtectionMiddleware::new(protect);
 
     // build the middleware chain
