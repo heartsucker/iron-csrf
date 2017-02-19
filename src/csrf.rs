@@ -51,22 +51,22 @@ pub trait CsrfProtection: Send + Sync {
 pub struct Ed25519CsrfProtection {
     key_pair: Ed25519KeyPair,
     pub_key: Vec<u8>,
-    ttl_ms: i64,
+    ttl_seconds: i64,
 }
 
 impl Ed25519CsrfProtection {
-    pub fn new(key_pair: Ed25519KeyPair, pub_key: Vec<u8>, ttl_ms: Option<i64>) -> Self {
+    pub fn new(key_pair: Ed25519KeyPair, pub_key: Vec<u8>, ttl_seconds: Option<i64>) -> Self {
         Ed25519CsrfProtection {
             key_pair: key_pair,
             pub_key: pub_key,
-            ttl_ms: ttl_ms.unwrap_or(3_600_000),
+            ttl_seconds: ttl_seconds.unwrap_or(3_600_000),
         }
     }
 }
 
 impl CsrfProtection for Ed25519CsrfProtection {
     fn generate_token(&self) -> Result<CsrfToken, String> {
-        let expires = UTC::now() + Duration::milliseconds(self.ttl_ms);
+        let expires = UTC::now() + Duration::seconds(self.ttl_seconds);
         let expires_bytes = datetime_bytes(expires);
         let msg = expires_bytes.as_ref();
         let sig = Vec::from(self.key_pair.sign(msg).as_slice());
@@ -88,21 +88,21 @@ impl CsrfProtection for Ed25519CsrfProtection {
 
 pub struct HmacCsrfProtection {
     key: SigningKey,
-    ttl_ms: i64,
+    ttl_seconds: i64,
 }
 
 impl HmacCsrfProtection {
-    pub fn new(key: SigningKey, ttl_ms: Option<i64>) -> Self {
+    pub fn new(key: SigningKey, ttl_seconds: Option<i64>) -> Self {
         HmacCsrfProtection {
             key: key,
-            ttl_ms: ttl_ms.unwrap_or(3_600_000),
+            ttl_seconds: ttl_seconds.unwrap_or(3_600_000),
         }
     }
 }
 
 impl CsrfProtection for HmacCsrfProtection {
     fn generate_token(&self) -> Result<CsrfToken, String> {
-        let expires = UTC::now() + Duration::milliseconds(self.ttl_ms);
+        let expires = UTC::now() + Duration::seconds(self.ttl_seconds);
         let expires_bytes = datetime_bytes(expires);
         let msg = expires_bytes.as_ref();
         let sig = hmac::sign(&self.key, msg);
@@ -145,7 +145,7 @@ mod tests {
 
         // check modified token doesn't validate
         let mut token = protect.generate_token().unwrap();
-        token.expires = token.expires + Duration::milliseconds(1);
+        token.expires = token.expires + Duration::seconds(1);
         assert!(!protect.validate_token(&token).unwrap());
 
         // check modified signature doesn't validate
@@ -175,7 +175,7 @@ mod tests {
 
         // check modified token doesn't validate
         let mut token = protect.generate_token().unwrap();
-        token.expires = token.expires + Duration::milliseconds(1);
+        token.expires = token.expires + Duration::seconds(1);
         assert!(!protect.validate_token(&token).unwrap());
 
         // check modified signature doesn't validate

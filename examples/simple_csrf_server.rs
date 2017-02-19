@@ -9,8 +9,7 @@ use iron::status;
 use ring::rand::SystemRandom;
 use ring::signature::Ed25519KeyPair;
 
-use iron_csrf::middleware::CsrfProtectionMiddleware;
-use iron_csrf::csrf::{Ed25519CsrfProtection, CsrfToken};
+use iron_csrf::{Ed25519CsrfProtection, CsrfToken, CsrfProtectionMiddleware};
 
 fn main() {
     // generate some crypto keys

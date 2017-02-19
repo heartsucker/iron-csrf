@@ -10,6 +10,7 @@ use urlencoded::{UrlEncodedQuery, UrlEncodedBody};
 
 use csrf::{CsrfProtection, CsrfToken};
 
+/// HTTP header that `iron_csrf` uses to identify the CSRF token
 header! { (XCsrfToken, "X-CSRF-Token") => [String] }
 
 pub struct CsrfProtectionMiddleware<T: CsrfProtection> {
