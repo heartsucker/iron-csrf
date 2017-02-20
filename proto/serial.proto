@@ -1,0 +1,6 @@
+syntax = "proto3";
+
+message CsrfTokenTransport {
+    bytes body = 1;
+    bytes signature = 2;
+}

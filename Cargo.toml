@@ -1,6 +1,6 @@
 [package]
 name = "iron-csrf"
-version = "0.0.5"
+version = "0.0.6"
 authors = [ "heartsucker <heartsucker@autistici.org>" ]
 description = "CSRF protection for the web framework Iron"
 repository = "https://github.com/heartsucker/iron-csrf"
@@ -12,10 +12,11 @@ categories = [ "web-programming::http-server", "authentication", "cryptography" 
 travis-ci = { repository = "https://github.com/heartsucker/iron-csrf", branch = "master" }
 
 [dependencies]
-chrono = { version = "^0.3", features = [ "rustc-serialize" ] }
+chrono = "^0.3"
 hyper = "^0.10"
 iron = "^0.5"
-ring = "^0.6"
+protobuf = "^1.2"
+ring = "^0.7"
 rustc-serialize = "^0.3"
 untrusted = "^0.3"
 urlencoded = "^0.5"

@@ -71,6 +71,7 @@ extern crate chrono;
 #[macro_use]
 extern crate hyper;
 extern crate iron;
+extern crate protobuf;
 extern crate ring;
 extern crate rustc_serialize;
 extern crate untrusted;
@@ -78,6 +79,7 @@ extern crate urlencoded;
 
 mod csrf;
 mod middleware;
+pub mod serial;
 
 pub use csrf::{CsrfProtection, HmacCsrfProtection, Ed25519CsrfProtection, CsrfToken};
 pub use middleware::{CsrfProtectionMiddleware, XCsrfToken};

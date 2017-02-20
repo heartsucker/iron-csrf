@@ -3,20 +3,33 @@ use std::mem;
 
 use chrono::Duration;
 use chrono::prelude::*;
+use protobuf;
+use protobuf::Message;
 use ring::hmac;
 use ring::hmac::SigningKey;
 use ring::signature;
 use ring::signature::Ed25519KeyPair;
-use rustc_serialize::json;
 use rustc_serialize::base64::{ToBase64, FromBase64, STANDARD};
-
 use untrusted;
 
-fn datetime_bytes(date: DateTime<UTC>) -> [u8; 12] {
-    unsafe { mem::transmute::<DateTime<UTC>, [u8; 12]>(date) }
+use serial::CsrfTokenTransport;
+
+fn datetime_to_bytes(date: DateTime<UTC>) -> Vec<u8> {
+    // TODO no unsafe
+    unsafe { mem::transmute::<DateTime<UTC>, [u8; 12]>(date) }.to_vec()
 }
 
-#[derive(Eq, PartialEq, Debug, RustcEncodable, RustcDecodable)]
+fn bytes_to_datetime(bytes: &[u8]) -> DateTime<UTC> {
+    if bytes.len() != 12 { panic!() } // TODO
+    let mut arr = [0u8; 12];
+    for (b, a) in bytes.iter().zip(arr.iter_mut()) {
+        *a = *b
+    }
+    // TODO no unsafe
+    unsafe { mem::transmute::<[u8; 12], DateTime<UTC>>(arr) }
+}
+
+#[derive(Eq, PartialEq, Debug)]
 pub struct CsrfToken {
     expires: DateTime<UTC>,
     signature: Vec<u8>,
@@ -31,15 +44,26 @@ impl CsrfToken {
     }
 
     pub fn b64_string(&self) -> String {
-        json::encode(&self).unwrap().as_bytes().to_base64(STANDARD) // TODO unwrap is evil
+        let mut transport = CsrfTokenTransport::new();
+        transport.set_body(datetime_to_bytes(self.expires));
+        transport.set_signature(self.signature.clone());
+
+        let bytes = transport.write_to_bytes().unwrap(); // TODO unwrap is evil
+        bytes.to_base64(STANDARD)
     }
 
     pub fn parse_b64(string: &str) -> Option<Self> {
-        string.as_bytes()
-            .from_base64()
-            .ok()
-            .and_then(|s| str::from_utf8(&s).ok().map(|s| s.to_string()))
-            .and_then(|s| json::decode(&s.as_str()).ok())
+        let bytes = string.as_bytes().from_base64().unwrap(); // TODO unwrap
+        let mut transport = protobuf::core::parse_from_bytes::<CsrfTokenTransport>(&bytes).unwrap(); // TODO unwrap
+
+        let dt_bytes = transport.take_body();
+        let dt = bytes_to_datetime(&dt_bytes);
+
+        let token = CsrfToken {
+            expires: dt,
+            signature: transport.take_signature(),
+        };
+        Some(token)
     }
 }
 
@@ -67,18 +91,18 @@ impl Ed25519CsrfProtection {
 impl CsrfProtection for Ed25519CsrfProtection {
     fn generate_token(&self) -> Result<CsrfToken, String> {
         let expires = UTC::now() + Duration::seconds(self.ttl_seconds);
-        let expires_bytes = datetime_bytes(expires);
+        let expires_bytes = datetime_to_bytes(expires);
         let msg = expires_bytes.as_ref();
         let sig = Vec::from(self.key_pair.sign(msg).as_slice());
         Ok(CsrfToken::new(expires, sig))
     }
 
     fn validate_token(&self, token: &CsrfToken) -> Result<bool, String> {
-        let expires_bytes = datetime_bytes(token.expires);
+        let expires_bytes = datetime_to_bytes(token.expires);
         let msg = untrusted::Input::from(expires_bytes.as_ref());
-        let sig = untrusted::Input::from(token.signature.as_slice());
+        let sig = untrusted::Input::from(&token.signature);
         let valid_sig = signature::verify(&signature::ED25519,
-                                          untrusted::Input::from(self.pub_key.as_slice()),
+                                          untrusted::Input::from(&self.pub_key),
                                           msg,
                                           sig)
             .is_ok();
@@ -103,18 +127,18 @@ impl HmacCsrfProtection {
 impl CsrfProtection for HmacCsrfProtection {
     fn generate_token(&self) -> Result<CsrfToken, String> {
         let expires = UTC::now() + Duration::seconds(self.ttl_seconds);
-        let expires_bytes = datetime_bytes(expires);
+        let expires_bytes = datetime_to_bytes(expires);
         let msg = expires_bytes.as_ref();
         let sig = hmac::sign(&self.key, msg);
         Ok(CsrfToken::new(expires, Vec::from(sig.as_ref())))
     }
 
     fn validate_token(&self, token: &CsrfToken) -> Result<bool, String> {
-        let expires_bytes = datetime_bytes(token.expires);
+        let expires_bytes = datetime_to_bytes(token.expires);
         let msg = expires_bytes.as_ref();
-        let sig = token.signature.as_slice();
-        let valid_sig = hmac::verify_with_own_key(&self.key, msg, sig).is_ok();
-        Ok(valid_sig && UTC::now() < token.expires)
+        let valid_sig = hmac::verify_with_own_key(&self.key, msg, &token.signature).is_ok();
+        let not_expired = UTC::now() < token.expires;
+        Ok(valid_sig && not_expired)
     }
 }
 
@@ -125,9 +149,18 @@ mod tests {
     use ring::rand::SystemRandom;
 
     #[test]
+    fn test_datetime_serde() {
+        let dt = UTC.ymd(2017, 1, 2).and_hms(3, 4, 5);
+        let bytes = datetime_to_bytes(dt);
+        let dt2 = bytes_to_datetime(&bytes);
+        assert_eq!(dt, dt2);
+    }
+
+    #[test]
     fn test_csrf_token_serde() {
-        let token = CsrfToken::new(UTC::now(), b"fake signature".to_vec());
-        let parsed = CsrfToken::parse_b64(token.b64_string().as_str()).unwrap();
+        let dt = UTC.ymd(2017, 1, 2).and_hms(3, 4, 5);
+        let token = CsrfToken::new(dt, b"fake signature".to_vec());
+        let parsed = CsrfToken::parse_b64(&token.b64_string()).unwrap();
         assert_eq!(token, parsed)
     }
 
