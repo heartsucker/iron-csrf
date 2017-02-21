@@ -20,7 +20,7 @@
 //!
 //! use iron::prelude::*;
 //! use iron::status;
-//! use iron_csrf::{CsrfProtectionMiddleware, HmacCsrfProtection, CsrfToken};
+//! use iron_csrf::{CsrfProtectionMiddleware, HmacCsrfProtection, CsrfToken, CsrfConfig};
 //! use ring::{digest, hmac};
 //! use ring::rand::SystemRandom;
 //!
@@ -31,8 +31,9 @@
 //!     let key = hmac::SigningKey::generate(&digest::SHA512, &rng).unwrap();
 //!
 //!     // Set up CSRF protection with tokens with a short TTL
-//!     let protect = HmacCsrfProtection::new(key, Some(300));
-//!     let middleware = CsrfProtectionMiddleware::new(protect);
+//!     let protect = HmacCsrfProtection::new(key);
+//!     let config = CsrfConfig::default();
+//!     let middleware = CsrfProtectionMiddleware::new(protect, config);
 //!
 //!     // Set up routes
 //!     let mut chain = Chain::new(|request: &mut Request| {
@@ -82,4 +83,4 @@ mod middleware;
 pub mod serial;
 
 pub use csrf::{CsrfProtection, HmacCsrfProtection, Ed25519CsrfProtection, CsrfToken};
-pub use middleware::{CsrfProtectionMiddleware, XCsrfToken};
+pub use middleware::{CsrfProtectionMiddleware, XCsrfToken, CsrfConfig, CsrfConfigBuilder};

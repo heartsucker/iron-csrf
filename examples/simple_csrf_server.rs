@@ -9,7 +9,7 @@ use iron::status;
 use ring::rand::SystemRandom;
 use ring::signature::Ed25519KeyPair;
 
-use iron_csrf::{Ed25519CsrfProtection, CsrfToken, CsrfProtectionMiddleware};
+use iron_csrf::{Ed25519CsrfProtection, CsrfToken, CsrfProtectionMiddleware, CsrfConfig};
 
 fn main() {
     // generate some crypto keys
@@ -19,11 +19,9 @@ fn main() {
         .unwrap();
 
     // initialize the CSRF protection
-    let protect = Ed25519CsrfProtection::new(key_pair,
-                                             key_bytes.public_key.to_vec(),
-                                             // use the default TTL
-                                             None);
-    let middleware = CsrfProtectionMiddleware::new(protect);
+    let protect = Ed25519CsrfProtection::new(key_pair, key_bytes.public_key.to_vec());
+    let config = CsrfConfig::default();
+    let middleware = CsrfProtectionMiddleware::new(protect, config);
 
     // build the middleware chain
     let mut chain = Chain::new(index);

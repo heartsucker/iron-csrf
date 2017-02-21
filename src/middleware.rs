@@ -13,13 +13,50 @@ use csrf::{CsrfProtection, CsrfToken};
 /// HTTP header that `iron_csrf` uses to identify the CSRF token
 header! { (XCsrfToken, "X-CSRF-Token") => [String] }
 
+pub struct CsrfConfig {
+    ttl_seconds: i64,
+}
+
+impl CsrfConfig {
+    pub fn default() -> Self {
+        CsrfConfig {
+            ttl_seconds: 3600,
+        }
+    }
+}
+
+pub struct CsrfConfigBuilder {
+    config: CsrfConfig,
+}
+
+impl CsrfConfigBuilder {
+    pub fn new() -> Self {
+        CsrfConfigBuilder {
+            config: CsrfConfig::default(),
+        }
+    }
+
+    pub fn ttl_seconds(mut self, ttl_seconds: i64) -> Self {
+        self.config.ttl_seconds = ttl_seconds;
+        self
+    }
+
+    pub fn build(self) -> CsrfConfig {
+        self.config
+    }
+}
+
 pub struct CsrfProtectionMiddleware<T: CsrfProtection> {
     protect: T,
+    config: CsrfConfig,
 }
 
 impl<T: CsrfProtection> CsrfProtectionMiddleware<T> {
-    pub fn new(protect: T) -> Self {
-        CsrfProtectionMiddleware { protect: protect }
+    pub fn new(protect: T, config: CsrfConfig) -> Self {
+        CsrfProtectionMiddleware {
+            protect: protect,
+            config: config,
+        }
     }
 
     fn validate_request(&self, mut request: &mut Request) -> IronResult<()> {
@@ -116,7 +153,7 @@ impl<T: CsrfProtection + 'static> BeforeMiddleware for CsrfProtectionMiddleware<
     fn before(&self, request: &mut Request) -> IronResult<()> {
         try!(self.validate_request(request));
 
-        match self.protect.generate_token() {
+        match self.protect.generate_token(self.config.ttl_seconds) {
             Ok(token) => {
                 let _ = request.extensions.insert::<CsrfToken>(token);
                 Ok(())
@@ -145,8 +182,9 @@ mod tests {
         let (_, key_bytes) = Ed25519KeyPair::generate_serializable(&rng).unwrap();
         let key_pair = Ed25519KeyPair::from_bytes(&key_bytes.private_key, &key_bytes.public_key)
             .unwrap();
-        let protect = Ed25519CsrfProtection::new(key_pair, key_bytes.public_key.to_vec(), None);
-        let _ = CsrfProtectionMiddleware::new(protect);
+        let protect = Ed25519CsrfProtection::new(key_pair, key_bytes.public_key.to_vec());
+        let config = CsrfConfig::default();
+        let _ = CsrfProtectionMiddleware::new(protect, config);
 
         // TODO test chain
     }

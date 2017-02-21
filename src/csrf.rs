@@ -68,29 +68,27 @@ impl CsrfToken {
 }
 
 pub trait CsrfProtection: Send + Sync {
-    fn generate_token(&self) -> Result<CsrfToken, String>;
+    fn generate_token(&self, ttl_seconds: i64) -> Result<CsrfToken, String>;
     fn validate_token(&self, token: &CsrfToken) -> Result<bool, String>;
 }
 
 pub struct Ed25519CsrfProtection {
     key_pair: Ed25519KeyPair,
     pub_key: Vec<u8>,
-    ttl_seconds: i64,
 }
 
 impl Ed25519CsrfProtection {
-    pub fn new(key_pair: Ed25519KeyPair, pub_key: Vec<u8>, ttl_seconds: Option<i64>) -> Self {
+    pub fn new(key_pair: Ed25519KeyPair, pub_key: Vec<u8>) -> Self {
         Ed25519CsrfProtection {
             key_pair: key_pair,
             pub_key: pub_key,
-            ttl_seconds: ttl_seconds.unwrap_or(3_600_000),
         }
     }
 }
 
 impl CsrfProtection for Ed25519CsrfProtection {
-    fn generate_token(&self) -> Result<CsrfToken, String> {
-        let expires = UTC::now() + Duration::seconds(self.ttl_seconds);
+    fn generate_token(&self, ttl_seconds: i64) -> Result<CsrfToken, String> {
+        let expires = UTC::now() + Duration::seconds(ttl_seconds);
         let expires_bytes = datetime_to_bytes(expires);
         let msg = expires_bytes.as_ref();
         let sig = Vec::from(self.key_pair.sign(msg).as_slice());
@@ -112,21 +110,19 @@ impl CsrfProtection for Ed25519CsrfProtection {
 
 pub struct HmacCsrfProtection {
     key: SigningKey,
-    ttl_seconds: i64,
 }
 
 impl HmacCsrfProtection {
-    pub fn new(key: SigningKey, ttl_seconds: Option<i64>) -> Self {
+    pub fn new(key: SigningKey) -> Self {
         HmacCsrfProtection {
             key: key,
-            ttl_seconds: ttl_seconds.unwrap_or(3_600_000),
         }
     }
 }
 
 impl CsrfProtection for HmacCsrfProtection {
-    fn generate_token(&self) -> Result<CsrfToken, String> {
-        let expires = UTC::now() + Duration::seconds(self.ttl_seconds);
+    fn generate_token(&self, ttl_seconds: i64) -> Result<CsrfToken, String> {
+        let expires = UTC::now() + Duration::seconds(ttl_seconds);
         let expires_bytes = datetime_to_bytes(expires);
         let msg = expires_bytes.as_ref();
         let sig = hmac::sign(&self.key, msg);
@@ -170,29 +166,24 @@ mod tests {
         let (_, key_bytes) = Ed25519KeyPair::generate_serializable(&rng).unwrap();
         let key_pair = Ed25519KeyPair::from_bytes(&key_bytes.private_key, &key_bytes.public_key)
             .unwrap();
-        let protect = Ed25519CsrfProtection::new(key_pair, key_bytes.public_key.to_vec(), None);
+        let protect = Ed25519CsrfProtection::new(key_pair, key_bytes.public_key.to_vec());
 
         // check token validates
-        let token = protect.generate_token().unwrap();
+        let token = protect.generate_token(300).unwrap();
         assert!(protect.validate_token(&token).unwrap());
 
         // check modified token doesn't validate
-        let mut token = protect.generate_token().unwrap();
+        let mut token = protect.generate_token(300).unwrap();
         token.expires = token.expires + Duration::seconds(1);
         assert!(!protect.validate_token(&token).unwrap());
 
         // check modified signature doesn't validate
-        let mut token = protect.generate_token().unwrap();
+        let mut token = protect.generate_token(300).unwrap();
         token.signature[0] = token.signature[0] ^ 0x07;
         assert!(!protect.validate_token(&token).unwrap());
 
-        // create a new protection with ttl = -1 for tokens that are never valid
-        let key_pair = Ed25519KeyPair::from_bytes(&key_bytes.private_key, &key_bytes.public_key)
-            .unwrap();
-        let protect = Ed25519CsrfProtection::new(key_pair, key_bytes.public_key.to_vec(), Some(-1));
-
-        // check the token is invalid
-        let token = protect.generate_token().unwrap();
+        // check the token is invalid with ttl = -1 for tokens that are never valid
+        let token = protect.generate_token(-1).unwrap();
         assert!(!protect.validate_token(&token).unwrap());
     }
 
@@ -200,28 +191,24 @@ mod tests {
     fn test_hmac_csrf_protection() {
         let rng = SystemRandom::new();
         let key = SigningKey::generate(&digest::SHA512, &rng).unwrap();
-        let protect = HmacCsrfProtection::new(key, None);
+        let protect = HmacCsrfProtection::new(key);
 
         // check token validates
-        let token = protect.generate_token().unwrap();
+        let token = protect.generate_token(300).unwrap();
         assert!(protect.validate_token(&token).unwrap());
 
         // check modified token doesn't validate
-        let mut token = protect.generate_token().unwrap();
+        let mut token = protect.generate_token(300).unwrap();
         token.expires = token.expires + Duration::seconds(1);
         assert!(!protect.validate_token(&token).unwrap());
 
         // check modified signature doesn't validate
-        let mut token = protect.generate_token().unwrap();
+        let mut token = protect.generate_token(300).unwrap();
         token.signature[0] = token.signature[0] ^ 0x07;
         assert!(!protect.validate_token(&token).unwrap());
 
-        // create a new protection with ttl = -1 for tokens that are never valid
-        let key = SigningKey::generate(&digest::SHA512, &rng).unwrap();
-        let protect = HmacCsrfProtection::new(key, Some(-1));
-
-        // check the token is invalid
-        let token = protect.generate_token().unwrap();
+        // check the token is invalid with ttl = -1 for tokens that are never valid
+        let token = protect.generate_token(-1).unwrap();
         assert!(!protect.validate_token(&token).unwrap());
     }
 }
