@@ -68,8 +68,16 @@ impl CsrfToken {
 }
 
 pub trait CsrfProtection: Send + Sync {
-    fn generate_token(&self, ttl_seconds: i64) -> Result<CsrfToken, String>;
+    fn sign_bytes(&self, bytes: &[u8]) -> Vec<u8>;
     fn validate_token(&self, token: &CsrfToken) -> Result<bool, String>;
+
+    fn generate_token(&self, ttl_seconds: i64) -> CsrfToken {
+        let expires = UTC::now() + Duration::seconds(ttl_seconds);
+        let expires_bytes = datetime_to_bytes(expires);
+        let msg = expires_bytes.as_ref();
+        let sig = self.sign_bytes(msg);
+        CsrfToken::new(expires, sig)
+    }
 }
 
 pub struct Ed25519CsrfProtection {
@@ -87,12 +95,8 @@ impl Ed25519CsrfProtection {
 }
 
 impl CsrfProtection for Ed25519CsrfProtection {
-    fn generate_token(&self, ttl_seconds: i64) -> Result<CsrfToken, String> {
-        let expires = UTC::now() + Duration::seconds(ttl_seconds);
-        let expires_bytes = datetime_to_bytes(expires);
-        let msg = expires_bytes.as_ref();
-        let sig = Vec::from(self.key_pair.sign(msg).as_slice());
-        Ok(CsrfToken::new(expires, sig))
+    fn sign_bytes(&self, bytes: &[u8]) -> Vec<u8> {
+        Vec::from(self.key_pair.sign(bytes).as_slice())
     }
 
     fn validate_token(&self, token: &CsrfToken) -> Result<bool, String> {
@@ -121,12 +125,9 @@ impl HmacCsrfProtection {
 }
 
 impl CsrfProtection for HmacCsrfProtection {
-    fn generate_token(&self, ttl_seconds: i64) -> Result<CsrfToken, String> {
-        let expires = UTC::now() + Duration::seconds(ttl_seconds);
-        let expires_bytes = datetime_to_bytes(expires);
-        let msg = expires_bytes.as_ref();
-        let sig = hmac::sign(&self.key, msg);
-        Ok(CsrfToken::new(expires, Vec::from(sig.as_ref())))
+    fn sign_bytes(&self, bytes: &[u8]) -> Vec<u8> {
+        let sig = hmac::sign(&self.key, bytes);
+        Vec::from(sig.as_ref())
     }
 
     fn validate_token(&self, token: &CsrfToken) -> Result<bool, String> {
@@ -169,21 +170,21 @@ mod tests {
         let protect = Ed25519CsrfProtection::new(key_pair, key_bytes.public_key.to_vec());
 
         // check token validates
-        let token = protect.generate_token(300).unwrap();
+        let token = protect.generate_token(300);
         assert!(protect.validate_token(&token).unwrap());
 
         // check modified token doesn't validate
-        let mut token = protect.generate_token(300).unwrap();
+        let mut token = protect.generate_token(300);
         token.expires = token.expires + Duration::seconds(1);
         assert!(!protect.validate_token(&token).unwrap());
 
         // check modified signature doesn't validate
-        let mut token = protect.generate_token(300).unwrap();
+        let mut token = protect.generate_token(300);
         token.signature[0] = token.signature[0] ^ 0x07;
         assert!(!protect.validate_token(&token).unwrap());
 
         // check the token is invalid with ttl = -1 for tokens that are never valid
-        let token = protect.generate_token(-1).unwrap();
+        let token = protect.generate_token(-1);
         assert!(!protect.validate_token(&token).unwrap());
     }
 
@@ -194,21 +195,21 @@ mod tests {
         let protect = HmacCsrfProtection::new(key);
 
         // check token validates
-        let token = protect.generate_token(300).unwrap();
+        let token = protect.generate_token(300);
         assert!(protect.validate_token(&token).unwrap());
 
         // check modified token doesn't validate
-        let mut token = protect.generate_token(300).unwrap();
+        let mut token = protect.generate_token(300);
         token.expires = token.expires + Duration::seconds(1);
         assert!(!protect.validate_token(&token).unwrap());
 
         // check modified signature doesn't validate
-        let mut token = protect.generate_token(300).unwrap();
+        let mut token = protect.generate_token(300);
         token.signature[0] = token.signature[0] ^ 0x07;
         assert!(!protect.validate_token(&token).unwrap());
 
         // check the token is invalid with ttl = -1 for tokens that are never valid
-        let token = protect.generate_token(-1).unwrap();
+        let token = protect.generate_token(-1);
         assert!(!protect.validate_token(&token).unwrap());
     }
 }

@@ -130,7 +130,6 @@ enum CsrfError {
     TokenValidationError,
     TokenInvalid,
     TokenMissing,
-    TokenGenerationError,
 }
 
 impl Error for CsrfError {
@@ -153,15 +152,9 @@ impl<T: CsrfProtection + 'static> BeforeMiddleware for CsrfProtectionMiddleware<
     fn before(&self, request: &mut Request) -> IronResult<()> {
         try!(self.validate_request(request));
 
-        match self.protect.generate_token(self.config.ttl_seconds) {
-            Ok(token) => {
-                let _ = request.extensions.insert::<CsrfToken>(token);
-                Ok(())
-            }
-            Err(_) => {
-                Err(IronError::new(CsrfError::TokenGenerationError, status::InternalServerError))
-            }
-        }
+        let token = self.protect.generate_token(self.config.ttl_seconds);
+        let _ = request.extensions.insert::<CsrfToken>(token);
+        Ok(())
     }
 
     fn catch(&self, _: &mut Request, _: IronError) -> IronResult<()> {
