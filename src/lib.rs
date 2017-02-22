@@ -2,7 +2,7 @@
 //!
 //! ## Overview
 //!
-//! `iron_csrf` is used as `iron::BeforeMiddleware` that checks all requests with
+//! `iron_csrf` is used as `iron::AroundMiddleware` that checks all requests with
 //! the HTTP method POST, PUT, PATCH, and DELETE for the presence of a CSRF token,
 //! and it generates tokens that can be used inside the application for use when
 //! generating the `Response`.
@@ -10,7 +10,7 @@
 //! ## Hello, world.
 //!
 //! The following is a simple server that prints the contents of the CSRF token. It
-//! demonstrates how to chain the middleware and access the string contents of the
+//! demonstrates how to wrap the middleware and access the string contents of the
 //! `CsrfToken`.
 //!
 //! ```
@@ -18,9 +18,11 @@
 //! extern crate iron_csrf;
 //! extern crate ring;
 //!
+//! use iron::AroundMiddleware;
 //! use iron::prelude::*;
 //! use iron::status;
-//! use iron_csrf::{CsrfProtectionMiddleware, HmacCsrfProtection, CsrfToken, CsrfConfig};
+//! use iron_csrf::{CsrfProtectionMiddleware, HmacCsrfProtection, CsrfToken, CsrfConfig,
+//!     CsrfConfigBuilder};
 //! use ring::{digest, hmac};
 //! use ring::rand::SystemRandom;
 //!
@@ -30,21 +32,22 @@
 //!     let rng = SystemRandom::new();
 //!     let key = hmac::SigningKey::generate(&digest::SHA512, &rng).unwrap();
 //!
-//!     // Set up CSRF protection with tokens with a short TTL
+//!     // Set up CSRF protection with the default config
 //!     let protect = HmacCsrfProtection::new(key);
-//!     let config = CsrfConfig::default();
+//!     let config = CsrfConfigBuilder::new().ttl_seconds(300).build();
 //!     let middleware = CsrfProtectionMiddleware::new(protect, config);
 //!
 //!     // Set up routes
-//!     let mut chain = Chain::new(|request: &mut Request| {
-//!         let token = request.extensions.get::<CsrfToken>().unwrap();
-//!         let msg = format!("Hello, CSRF Token: {}", token.b64_string());
-//!         Ok(Response::with((status::Ok, msg)))
-//!     });
-//!     chain.link_before(middleware);
+//!     let handler = middleware.around(Box::new(index));
 //!
 //!     // Make and start the server
-//!     Iron::new(chain); //.http("localhost:8080").unwrap();
+//!     Iron::new(handler); //.http("localhost:8080").unwrap();
+//! }
+//!
+//! fn index(request: &mut Request) -> IronResult<Response> {
+//!     let token = request.extensions.get::<CsrfToken>().unwrap();
+//!     let msg = format!("Hello, CSRF Token: {}", token.b64_string());
+//!     Ok(Response::with((status::Ok, msg)))
 //! }
 //!
 //! ```
@@ -79,8 +82,8 @@ extern crate untrusted;
 extern crate urlencoded;
 
 mod csrf;
-mod middleware;
-pub mod serial;
+mod serial;
 
-pub use csrf::{CsrfProtection, HmacCsrfProtection, Ed25519CsrfProtection, CsrfToken};
-pub use middleware::{CsrfProtectionMiddleware, XCsrfToken, CsrfConfig, CsrfConfigBuilder};
+pub use csrf::{CsrfProtection, HmacCsrfProtection, Ed25519CsrfProtection, CsrfToken,
+    XCsrfToken, CsrfConfig, CsrfConfigBuilder, CsrfProtectionMiddleware};
+

@@ -1,8 +1,16 @@
+use std::error::Error;
+use std::fmt;
+
 use std::str;
 use std::mem;
 
 use chrono::Duration;
 use chrono::prelude::*;
+use iron::typemap;
+use iron::method;
+use iron::middleware::{AroundMiddleware, Handler};
+use iron::prelude::*;
+use iron::status;
 use protobuf;
 use protobuf::Message;
 use ring::hmac;
@@ -11,6 +19,7 @@ use ring::signature;
 use ring::signature::Ed25519KeyPair;
 use rustc_serialize::base64::{ToBase64, FromBase64, STANDARD};
 use untrusted;
+use urlencoded::{UrlEncodedQuery, UrlEncodedBody};
 
 use serial::CsrfTokenTransport;
 
@@ -27,6 +36,57 @@ fn bytes_to_datetime(bytes: &[u8]) -> DateTime<UTC> {
     }
     // TODO no unsafe
     unsafe { mem::transmute::<[u8; 12], DateTime<UTC>>(arr) }
+}
+
+/// HTTP header that `iron_csrf` uses to identify the CSRF token
+header! { (XCsrfToken, "X-CSRF-Token") => [String] }
+
+struct CsrfCookie {
+    // TODO padding
+    expires: DateTime<UTC>,
+    nonce: Vec<u8>,
+}
+
+impl CsrfCookie {
+    fn new(expires: DateTime<UTC>, nonce: Vec<u8>) -> Self {
+        CsrfCookie {
+            expires: expires,
+            nonce: nonce,
+        }
+    }
+}
+
+pub struct CsrfConfig {
+    ttl_seconds: i64,
+}
+
+impl CsrfConfig {
+    pub fn default() -> Self {
+        CsrfConfig {
+            ttl_seconds: 3600,
+        }
+    }
+}
+
+pub struct CsrfConfigBuilder {
+    config: CsrfConfig,
+}
+
+impl CsrfConfigBuilder {
+    pub fn new() -> Self {
+        CsrfConfigBuilder {
+            config: CsrfConfig::default(),
+        }
+    }
+
+    pub fn ttl_seconds(mut self, ttl_seconds: i64) -> Self {
+        self.config.ttl_seconds = ttl_seconds;
+        self
+    }
+
+    pub fn build(self) -> CsrfConfig {
+        self.config
+    }
 }
 
 #[derive(Eq, PartialEq, Debug)]
@@ -67,7 +127,7 @@ impl CsrfToken {
     }
 }
 
-pub trait CsrfProtection: Send + Sync {
+pub trait CsrfProtection: Sized + Send + Sync {
     fn sign_bytes(&self, bytes: &[u8]) -> Vec<u8>;
     fn validate_token(&self, token: &CsrfToken) -> Result<bool, String>;
 
@@ -139,11 +199,153 @@ impl CsrfProtection for HmacCsrfProtection {
     }
 }
 
+#[derive(Debug)]
+enum CsrfError {
+    TokenValidationError,
+    TokenInvalid,
+    TokenMissing,
+}
+
+impl Error for CsrfError {
+    fn description(&self) -> &str {
+        "TODO"
+    }
+}
+
+impl fmt::Display for CsrfError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
+impl typemap::Key for CsrfToken {
+    type Value = CsrfToken;
+}
+
+struct CsrfHandler<P: CsrfProtection, H: Handler> {
+    protect: P,
+    config: CsrfConfig,
+    handler: H,
+}
+
+impl<P: CsrfProtection, H: Handler> CsrfHandler<P, H> {
+    fn new(protect: P, config: CsrfConfig, handler: H) -> Self {
+        CsrfHandler {
+            protect: protect,
+            config: config, 
+            handler: handler,
+        }
+    }
+
+    fn validate_request(&self, mut request: &mut Request) -> IronResult<()> {
+        match request.method {
+            method::Post | method::Put | method::Patch | method::Delete => {
+                match self.extract_csrf_token(&mut request) {
+                    None => Err(IronError::new(CsrfError::TokenMissing, status::Forbidden)),
+                    Some(token) => {
+                        match self.protect.validate_token(&token) {
+                            Ok(true) => Ok(()),
+                            Ok(false) => {
+                                Err(IronError::new(CsrfError::TokenInvalid, status::Forbidden))
+                            }
+                            Err(_) => {
+                                Err(IronError::new(CsrfError::TokenValidationError,
+                                                   status::InternalServerError))
+                            }
+                        }
+                    }
+                }
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn extract_csrf_token(&self, mut request: &mut Request) -> Option<CsrfToken> {
+        let f_token = self.extract_csrf_token_from_form(&mut request);
+        let q_token = self.extract_csrf_token_from_query(&mut request);
+        let h_token = self.extract_csrf_token_from_headers(&mut request);
+
+        f_token.or(q_token).or(h_token)
+    }
+
+    fn extract_csrf_token_from_form(&self, mut request: &mut Request) -> Option<CsrfToken> {
+        let token = request.get_ref::<UrlEncodedBody>()
+            .ok()
+            .and_then(|form| form.get("csrf-token"))
+            .and_then(|v| v.first())
+            .and_then(|token_str| CsrfToken::parse_b64(token_str));
+
+        // TODO remove token from form
+
+        token
+    }
+
+    fn extract_csrf_token_from_query(&self, mut request: &mut Request) -> Option<CsrfToken> {
+        let token = request.get_ref::<UrlEncodedQuery>()
+            .ok()
+            .and_then(|query| query.get("csrf-token"))
+            .and_then(|v| v.first())
+            .and_then(|token_str| CsrfToken::parse_b64(token_str));
+
+        // TODO remove token from query
+
+        token
+    }
+
+    fn extract_csrf_token_from_headers(&self, mut request: &mut Request) -> Option<CsrfToken> {
+        let token = request.headers
+            .get::<XCsrfToken>()
+            .and_then(|token_str| CsrfToken::parse_b64(token_str));
+
+        let _ = request.headers.remove::<XCsrfToken>();
+
+        token
+    }
+}
+
+impl<P: CsrfProtection + Sized + 'static, H: Handler> Handler for CsrfHandler<P, H> {
+    fn handle(&self, mut request: &mut Request) -> IronResult<Response> {
+        // before
+        try!(self.validate_request(request));
+        let token = self.protect.generate_token(self.config.ttl_seconds);
+        let _ = request.extensions.insert::<CsrfToken>(token);
+
+        // main
+        let response = self.handler.handle(&mut request)?;
+
+        // after
+        // TODO 
+
+        Ok(response)
+    }
+}
+
+pub struct CsrfProtectionMiddleware<P: CsrfProtection> {
+    protect: P,
+    config: CsrfConfig,
+}
+
+impl<P: CsrfProtection + Sized + 'static> CsrfProtectionMiddleware<P> {
+    pub fn new(protect: P, config: CsrfConfig) -> Self {
+        CsrfProtectionMiddleware {
+            protect: protect,
+            config: config,
+        }
+    }
+}
+
+impl<P: CsrfProtection + Sized + 'static> AroundMiddleware for CsrfProtectionMiddleware<P> {
+    fn around(self, handler: Box<Handler>) -> Box<Handler> {
+        Box::new(CsrfHandler::new(self.protect, self.config, handler))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use ring::digest;
     use ring::rand::SystemRandom;
+    use ring::signature::Ed25519KeyPair;
 
     #[test]
     fn test_datetime_serde() {
@@ -212,4 +414,21 @@ mod tests {
         let token = protect.generate_token(-1);
         assert!(!protect.validate_token(&token).unwrap());
     }
+
+    #[test]
+    fn test_ed25519_middleware() {
+        let rng = SystemRandom::new();
+        let (_, key_bytes) = Ed25519KeyPair::generate_serializable(&rng).unwrap();
+        let key_pair = Ed25519KeyPair::from_bytes(&key_bytes.private_key, &key_bytes.public_key)
+            .unwrap();
+        let protect = Ed25519CsrfProtection::new(key_pair, key_bytes.public_key.to_vec());
+        let config = CsrfConfig::default();
+        let _ = CsrfProtectionMiddleware::new(protect, config);
+
+        // TODO test chain
+    }
+
+    // TODO test form extraction
+    // TODO test query extraction
+    // TODO test headers extraction
 }

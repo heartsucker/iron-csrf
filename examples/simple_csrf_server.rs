@@ -2,6 +2,7 @@ extern crate iron;
 extern crate iron_csrf;
 extern crate ring;
 
+use iron::AroundMiddleware;
 use iron::headers::ContentType;
 use iron::method;
 use iron::prelude::*;
@@ -23,12 +24,10 @@ fn main() {
     let config = CsrfConfig::default();
     let middleware = CsrfProtectionMiddleware::new(protect, config);
 
-    // build the middleware chain
-    let mut chain = Chain::new(index);
-    chain.link_before(middleware);
+    let handler = middleware.around(Box::new(index));
 
     // awwwww yissssssss
-    Iron::new(chain).http("localhost:8080").unwrap();
+    Iron::new(handler).http("localhost:8080").unwrap();
 }
 
 
