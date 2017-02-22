@@ -46,7 +46,7 @@
 //!
 //! fn index(request: &mut Request) -> IronResult<Response> {
 //!     let token = request.extensions.get::<CsrfToken>().unwrap();
-//!     let msg = format!("Hello, CSRF Token: {}", token.b64_string());
+//!     let msg = format!("Hello, CSRF Token: {}", token.b64_string().unwrap());
 //!     Ok(Response::with((status::Ok, msg)))
 //! }
 //!
@@ -84,6 +84,7 @@ extern crate urlencoded;
 mod csrf;
 mod serial;
 
+// TODO `pub use` these individually and give a short description
 pub use csrf::{CsrfProtection, HmacCsrfProtection, Ed25519CsrfProtection, CsrfToken,
     XCsrfToken, CsrfConfig, CsrfConfigBuilder, CsrfProtectionMiddleware};
 

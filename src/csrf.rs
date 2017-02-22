@@ -103,18 +103,18 @@ impl CsrfToken {
         }
     }
 
-    pub fn b64_string(&self) -> String {
+    pub fn b64_string(&self) -> Result<String, ()> {
         let mut transport = CsrfTokenTransport::new();
         transport.set_body(datetime_to_bytes(self.expires));
         transport.set_signature(self.signature.clone());
-
-        let bytes = transport.write_to_bytes().unwrap(); // TODO unwrap is evil
-        bytes.to_base64(STANDARD)
+        transport.write_to_bytes()
+            .map(|bytes| bytes.to_base64(STANDARD))
+            .map_err(|_| ())
     }
 
-    pub fn parse_b64(string: &str) -> Option<Self> {
-        let bytes = string.as_bytes().from_base64().unwrap(); // TODO unwrap
-        let mut transport = protobuf::core::parse_from_bytes::<CsrfTokenTransport>(&bytes).unwrap(); // TODO unwrap
+    pub fn parse_b64(string: &str) -> Result<Self, ()> {
+        let bytes = string.as_bytes().from_base64().map_err(|_| ())?;
+        let mut transport = protobuf::core::parse_from_bytes::<CsrfTokenTransport>(&bytes).map_err(|_| ())?;
 
         let dt_bytes = transport.take_body();
         let dt = bytes_to_datetime(&dt_bytes);
@@ -123,7 +123,7 @@ impl CsrfToken {
             expires: dt,
             signature: transport.take_signature(),
         };
-        Some(token)
+        Ok(token)
     }
 }
 
@@ -273,7 +273,7 @@ impl<P: CsrfProtection, H: Handler> CsrfHandler<P, H> {
             .ok()
             .and_then(|form| form.get("csrf-token"))
             .and_then(|v| v.first())
-            .and_then(|token_str| CsrfToken::parse_b64(token_str));
+            .and_then(|token_str| CsrfToken::parse_b64(token_str).ok());
 
         // TODO remove token from form
 
@@ -285,7 +285,7 @@ impl<P: CsrfProtection, H: Handler> CsrfHandler<P, H> {
             .ok()
             .and_then(|query| query.get("csrf-token"))
             .and_then(|v| v.first())
-            .and_then(|token_str| CsrfToken::parse_b64(token_str));
+            .and_then(|token_str| CsrfToken::parse_b64(token_str).ok());
 
         // TODO remove token from query
 
@@ -295,7 +295,7 @@ impl<P: CsrfProtection, H: Handler> CsrfHandler<P, H> {
     fn extract_csrf_token_from_headers(&self, mut request: &mut Request) -> Option<CsrfToken> {
         let token = request.headers
             .get::<XCsrfToken>()
-            .and_then(|token_str| CsrfToken::parse_b64(token_str));
+            .and_then(|token_str| CsrfToken::parse_b64(token_str).ok());
 
         let _ = request.headers.remove::<XCsrfToken>();
 
@@ -359,7 +359,7 @@ mod tests {
     fn test_csrf_token_serde() {
         let dt = UTC.ymd(2017, 1, 2).and_hms(3, 4, 5);
         let token = CsrfToken::new(dt, b"fake signature".to_vec());
-        let parsed = CsrfToken::parse_b64(&token.b64_string()).unwrap();
+        let parsed = CsrfToken::parse_b64(&token.b64_string().unwrap()).unwrap();
         assert_eq!(token, parsed)
     }
 
