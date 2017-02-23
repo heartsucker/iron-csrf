@@ -13,11 +13,13 @@ travis-ci = { repository = "https://github.com/heartsucker/iron-csrf", branch = 
 
 [dependencies]
 chrono = "^0.3"
+cookie = { verosion = "^0.6", features = [ "percent-encode" ] }
 hyper = "^0.10"
 iron = "^0.5"
 protobuf = "^1.2"
 ring = "^0.7"
 rustc-serialize = "^0.3"
+time = "^0.1"
 untrusted = "^0.3"
 urlencoded = "^0.5"
 
