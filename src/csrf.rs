@@ -75,7 +75,13 @@ pub struct CsrfConfig {
 }
 
 impl CsrfConfig {
-    pub fn default() -> Self {
+    pub fn build() -> CsrfConfigBuilder {
+        CsrfConfigBuilder { config: CsrfConfig::default() }
+    }
+}
+
+impl Default for CsrfConfig {
+    fn default() -> Self {
         CsrfConfig { ttl_seconds: 3600 }
     }
 }
@@ -84,21 +90,18 @@ pub struct CsrfConfigBuilder {
     config: CsrfConfig,
 }
 
-// TODO use Default trait
-// TODO use build/finish, not new/build
-// TODO verify ttl_seconds is >= 0
 impl CsrfConfigBuilder {
-    pub fn new() -> Self {
-        CsrfConfigBuilder { config: CsrfConfig::default() }
-    }
-
     pub fn ttl_seconds(mut self, ttl_seconds: i64) -> Self {
         self.config.ttl_seconds = ttl_seconds;
         self
     }
 
-    pub fn build(self) -> CsrfConfig {
-        self.config
+    pub fn finish(self) -> Result<CsrfConfig, String> {
+        if self.config.ttl_seconds >= 0 {
+            Ok(self.config)
+        } else {
+            Err("ttl_seconds was negative".to_string())
+        }
     }
 }
 
@@ -366,6 +369,8 @@ impl<P: CsrfProtection + Sized + 'static, H: Handler> Handler for CsrfHandler<P,
         }
         response.headers.set(SetCookie(cookies));
 
+        // TODO figure out how display text like "Csrf error" to clients don't see a blank 403
+
         Ok(response)
     }
 }
@@ -411,14 +416,7 @@ mod tests {
         assert_eq!(cookie, parsed)
     }
 
-    #[test]
-    fn test_ed25519_csrf_protection() {
-        let rng = SystemRandom::new();
-        let (_, key_bytes) = Ed25519KeyPair::generate_serializable(&rng).unwrap();
-        let key_pair = Ed25519KeyPair::from_bytes(&key_bytes.private_key, &key_bytes.public_key)
-            .unwrap();
-        let protect = Ed25519CsrfProtection::new(key_pair, key_bytes.public_key.to_vec());
-
+    fn test_protection<P: CsrfProtection>(protect: P) {
         // check token validates
         let (token, cookie) = protect.generate_token_pair(300);
         assert!(protect.verify_token_pair(&token, &cookie));
@@ -428,12 +426,15 @@ mod tests {
         token.nonce[0] = token.nonce[0] ^ 0x07;
         assert!(!protect.verify_token_pair(&token, &cookie));
 
-        // check modified cookie  doesn't validate
+        // check modified cookie doesn't validate
         let (token, mut cookie) = protect.generate_token_pair(300);
         cookie.nonce[0] = cookie.nonce[0] ^ 0x07;
         assert!(!protect.verify_token_pair(&token, &cookie));
 
-        // TODO check modified signature
+        // check modified signature doesn't validate
+        let (token, mut cookie) = protect.generate_token_pair(300);
+        cookie.signature[0] = cookie.signature[0] ^ 0x07;
+        assert!(!protect.verify_token_pair(&token, &cookie));
 
         // check the token is invalid with ttl = 0 for tokens that are never valid
         let (token, cookie) = protect.generate_token_pair(0);
@@ -441,30 +442,21 @@ mod tests {
     }
 
     #[test]
+    fn test_ed25519_csrf_protection() {
+        let rng = SystemRandom::new();
+        let (_, key_bytes) = Ed25519KeyPair::generate_serializable(&rng).unwrap();
+        let key_pair = Ed25519KeyPair::from_bytes(&key_bytes.private_key, &key_bytes.public_key)
+            .unwrap();
+        let protect = Ed25519CsrfProtection::new(key_pair, key_bytes.public_key.to_vec());
+        test_protection(protect)
+    }
+
+    #[test]
     fn test_hmac_csrf_protection() {
         let rng = SystemRandom::new();
         let key = SigningKey::generate(&digest::SHA512, &rng).unwrap();
         let protect = HmacCsrfProtection::new(key);
-
-        // check token validates
-        let (token, cookie) = protect.generate_token_pair(300);
-        assert!(protect.verify_token_pair(&token, &cookie));
-
-        // check modified token doesn't validate
-        let (mut token, cookie) = protect.generate_token_pair(300);
-        token.nonce[0] = token.nonce[0] ^ 0x07;
-        assert!(!protect.verify_token_pair(&token, &cookie));
-
-        // check modified cookie  doesn't validate
-        let (token, mut cookie) = protect.generate_token_pair(300);
-        cookie.nonce[0] = cookie.nonce[0] ^ 0x07;
-        assert!(!protect.verify_token_pair(&token, &cookie));
-
-        // TODO check modified signature
-
-        // check the token is invalid with ttl = 0 for tokens that are never valid
-        let (token, cookie) = protect.generate_token_pair(0);
-        assert!(!protect.verify_token_pair(&token, &cookie));
+        test_protection(protect)
     }
 
     #[test]
@@ -474,6 +466,17 @@ mod tests {
         let key_pair = Ed25519KeyPair::from_bytes(&key_bytes.private_key, &key_bytes.public_key)
             .unwrap();
         let protect = Ed25519CsrfProtection::new(key_pair, key_bytes.public_key.to_vec());
+        let config = CsrfConfig::default();
+        let _ = CsrfProtectionMiddleware::new(protect, config);
+
+        // TODO test request/response with actual handler
+    }
+
+    #[test]
+    fn test_hmac_middleware() {
+        let rng = SystemRandom::new();
+        let key = hmac::SigningKey::generate(&digest::SHA512, &rng).unwrap();
+        let protect = HmacCsrfProtection::new(key);
         let config = CsrfConfig::default();
         let _ = CsrfProtectionMiddleware::new(protect, config);
 

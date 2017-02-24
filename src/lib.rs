@@ -21,8 +21,7 @@
 //! use iron::AroundMiddleware;
 //! use iron::prelude::*;
 //! use iron::status;
-//! use iron_csrf::{CsrfProtectionMiddleware, HmacCsrfProtection, CsrfToken, CsrfConfig,
-//!     CsrfConfigBuilder};
+//! use iron_csrf::{CsrfProtectionMiddleware, HmacCsrfProtection, CsrfToken, CsrfConfig};
 //! use ring::{digest, hmac};
 //! use ring::rand::SystemRandom;
 //!
@@ -34,7 +33,7 @@
 //!
 //!     // Set up CSRF protection with the default config
 //!     let protect = HmacCsrfProtection::new(key);
-//!     let config = CsrfConfigBuilder::new().ttl_seconds(300).build();
+//!     let config = CsrfConfig::build().ttl_seconds(300).finish().unwrap();
 //!     let middleware = CsrfProtectionMiddleware::new(protect, config);
 //!
 //!     // Set up routes
