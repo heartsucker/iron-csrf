@@ -1,6 +1,5 @@
 use std::error::Error;
 use std::fmt;
-use std::mem;
 use std::str;
 
 use chrono::Duration;
@@ -29,6 +28,7 @@ header! { (XCsrfToken, "X-CSRF-Token") => [String] }
 
 const CSRF_COOKIE_NAME: &'static str = "csrf";
 
+#[derive(Debug)]
 pub struct CsrfCookie {
     // TODO padding
     expires: u64,
@@ -64,6 +64,7 @@ pub struct CsrfConfigBuilder {
 
 // TODO use Default trait
 // TODO use build/finish, not new/build
+// TODO verify ttl_seconds is >= 0
 impl CsrfConfigBuilder {
     pub fn new() -> Self {
         CsrfConfigBuilder {
@@ -147,9 +148,7 @@ impl CsrfProtection for Ed25519CsrfProtection {
     }
 
     fn verify_token_pair(&self, token: &CsrfToken, cookie: &CsrfCookie) -> bool {
-        let expires = time::precise_time_ns();
-        let expires_bytes = unsafe { mem::transmute::<u64, [u8; 8]>(expires) };
-        let msg = untrusted::Input::from(expires_bytes.as_ref());
+        let msg = untrusted::Input::from(token.nonce.as_slice());
         let sig = untrusted::Input::from(&cookie.signature);
         let valid_sig = signature::verify(&signature::ED25519,
                                           untrusted::Input::from(&self.pub_key),
@@ -157,7 +156,7 @@ impl CsrfProtection for Ed25519CsrfProtection {
                                           sig)
             .is_ok();
         let nonces_match = token.nonce == cookie.nonce;
-        let not_expired = cookie.expires < time::precise_time_ns();
+        let not_expired = cookie.expires > time::precise_time_ns();
         valid_sig && nonces_match && not_expired
     }
 }
@@ -183,7 +182,7 @@ impl CsrfProtection for HmacCsrfProtection {
     fn verify_token_pair(&self, token: &CsrfToken, cookie: &CsrfCookie) -> bool {
         let valid_sig = hmac::verify_with_own_key(&self.key, &token.nonce, &cookie.signature).is_ok();
         let nonces_match = token.nonce == cookie.nonce;
-        let not_expired = cookie.expires < time::precise_time_ns();
+        let not_expired = cookie.expires > time::precise_time_ns();
         valid_sig && nonces_match && not_expired
     }
 }
@@ -320,7 +319,7 @@ impl<P: CsrfProtection + Sized + 'static, H: Handler> Handler for CsrfHandler<P,
 
         // after
         let nonce_str = cookie.nonce.as_slice().to_base64(STANDARD);
-        let cookie = Cookie::build("csrf-token", nonce_str)
+        let cookie = Cookie::build("csrf", nonce_str)
             .path("/")
             .http_only(true)
             .max_age(Duration::seconds(self.config.ttl_seconds))
@@ -381,17 +380,19 @@ mod tests {
         assert!(protect.verify_token_pair(&token, &cookie));
 
         // check modified token doesn't validate
-        let (token, mut cookie) = protect.generate_token_pair(300);
-        cookie.expires = cookie.expires ^ 0x07;
-        assert!(!protect.verify_token_pair(&token, &cookie));
-
-        // check modified signature doesn't validate
         let (mut token, cookie) = protect.generate_token_pair(300);
         token.nonce[0] = token.nonce[0] ^ 0x07;
         assert!(!protect.verify_token_pair(&token, &cookie));
 
-        // check the token is invalid with ttl = -1 for tokens that are never valid
-        let (token, cookie)= protect.generate_token_pair(-1);
+        // check modified cookie  doesn't validate
+        let (token, mut cookie) = protect.generate_token_pair(300);
+        cookie.nonce[0] = cookie.nonce[0] ^ 0x07;
+        assert!(!protect.verify_token_pair(&token, &cookie));
+
+        // TODO check modified signature
+
+        // check the token is invalid with ttl = 0 for tokens that are never valid
+        let (token, cookie)= protect.generate_token_pair(0);
         assert!(!protect.verify_token_pair(&token, &cookie));
     }
 
@@ -406,17 +407,19 @@ mod tests {
         assert!(protect.verify_token_pair(&token, &cookie));
 
         // check modified token doesn't validate
-        let (token, mut cookie) = protect.generate_token_pair(300);
-        cookie.expires = cookie.expires ^ 0x07;
-        assert!(!protect.verify_token_pair(&token, &cookie));
-
-        // check modified signature doesn't validate
         let (mut token, cookie) = protect.generate_token_pair(300);
         token.nonce[0] = token.nonce[0] ^ 0x07;
         assert!(!protect.verify_token_pair(&token, &cookie));
 
-        // check the token is invalid with ttl = -1 for tokens that are never valid
-        let (token, cookie)= protect.generate_token_pair(-1);
+        // check modified cookie  doesn't validate
+        let (token, mut cookie) = protect.generate_token_pair(300);
+        cookie.nonce[0] = cookie.nonce[0] ^ 0x07;
+        assert!(!protect.verify_token_pair(&token, &cookie));
+
+        // TODO check modified signature
+
+        // check the token is invalid with ttl = 0 for tokens that are never valid
+        let (token, cookie)= protect.generate_token_pair(0);
         assert!(!protect.verify_token_pair(&token, &cookie));
     }
 
