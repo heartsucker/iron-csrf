@@ -2,16 +2,14 @@
 //!
 //! ## Overview
 //!
-//! `iron_csrf` is used as `iron::AroundMiddleware` that checks all requests with
-//! the HTTP method POST, PUT, PATCH, and DELETE for the presence of a CSRF token,
-//! and it generates tokens that can be used inside the application for use when
-//! generating the `Response`.
+//! `iron_csrf` is used as `iron::AroundMiddleware` that checks all requests with the HTTP method
+//! POST, PUT, PATCH, and DELETE for the presence of a CSRF token, and it generates tokens that can
+//! be  used inside the application for use when generating the `Response`.
 //!
-//! ## Hello, world.
+//! ## Hello, CSRF.
 //!
-//! The following is a simple server that prints the contents of the CSRF token. It
-//! demonstrates how to wrap the middleware and access the string contents of the
-//! `CsrfToken`.
+//! The following is a simple server that prints the contents of the CSRF token. It  demonstrates
+//! how to wrap the middleware and access the string contents of the `CsrfToken`.
 //!
 //! ```
 //! extern crate iron;
@@ -58,17 +56,18 @@
 //! - The query parameter `csrf-token`
 //! - The header `X-CSRF-Token`
 //!
-//! The selection is done short circuit, so the first present wins, and retrieval
-//! only fails if the token is not present in any of the fields.
+//! The selection is done short circuit, so the first present wins, and retrieval on fails if the
+//! token is not present in any of the fields.
 //!
-//! Tokens have a time to live (TTL) that defaults to 3600 seconds. If a token is
-//! stale, validation will fail.
+//! Tokens have a time to live (TTL) that defaults to 3600 seconds. If a token is stale, validation
+//! will fail.
 //!
-//! In the provided implementations, tokens are cryptographically signed, so tampering
-//! with a token or its signature will cause the validation to fail.
+//! In the provided implementations, tokens are cryptographically signed, so tampering with a token
+//! or its signature will cause the validation to fail. Validation failures will return a `403
+//! Forbidden`.
 //!
-//! Validation failures will return a `403 Forbidden`.
-
+//! Signatures and other data needed for validation are stored in a cookie that is sent to the user
+//! via the `Set-Cookie` header.
 
 extern crate chrono;
 extern crate cookie;
@@ -85,6 +84,7 @@ extern crate urlencoded;
 mod csrf;
 mod serial;
 
-// TODO `pub use` these individually and give a short description
-pub use csrf::{CsrfProtection, HmacCsrfProtection, Ed25519CsrfProtection, CsrfToken, XCsrfToken,
-               CsrfConfig, CsrfConfigBuilder, CsrfProtectionMiddleware};
+pub use csrf::{CSRF_COOKIE_NAME, CSRF_FORM_FIELD, CSRF_HEADER, CSRF_QUERY_STRING};
+
+pub use csrf::{CsrfConfig, CsrfConfigBuilder, CsrfCookie, CsrfError, CsrfToken, CsrfProtection,
+               CsrfProtectionMiddleware, Ed25519CsrfProtection, HmacCsrfProtection, XCsrfToken};

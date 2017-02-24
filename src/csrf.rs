@@ -24,13 +24,23 @@ use urlencoded::{UrlEncodedQuery, UrlEncodedBody};
 
 use serial::{CsrfTokenTransport, CsrfCookieTransport};
 
-/// HTTP header that `iron_csrf` uses to identify the CSRF token
-header! { (XCsrfToken, "X-CSRF-Token") => [String] }
+/// The name of the cookie for the CSRF validation data and signature.
+pub const CSRF_COOKIE_NAME: &'static str = "csrf";
 
-/// The name of the cookie where the CSRF token is stored
-const CSRF_COOKIE_NAME: &'static str = "csrf";
+/// The name of the form field for the CSRF token.
+pub const CSRF_FORM_FIELD: &'static str = "csrf";
 
-/// A struct representing a decoded CSRF cookie
+/// The name of the HTTP header for the CSRF token.
+pub const CSRF_HEADER: &'static str = "X-CSRF-Token";
+
+/// The name of the query parameter for the CSRF token.
+pub const CSRF_QUERY_STRING: &'static str = "csrf-token";
+
+// TODO why doesn't this show up in the docs?
+/// The HTTP header for the CSRF token.
+header! { (XCsrfToken, CSRF_HEADER) => [String] }
+
+/// A decoded CSRF cookie.
 #[derive(Debug, Eq, PartialEq)]
 pub struct CsrfCookie {
     // TODO padding
@@ -70,6 +80,7 @@ impl CsrfCookie {
     }
 }
 
+/// The configuation used to initialize `CsrfProtection`.
 pub struct CsrfConfig {
     ttl_seconds: i64,
 }
@@ -86,6 +97,7 @@ impl Default for CsrfConfig {
     }
 }
 
+/// A utility to help build a `CsrfConfig` in an API backwards compatible way.
 pub struct CsrfConfigBuilder {
     config: CsrfConfig,
 }
@@ -105,6 +117,19 @@ impl CsrfConfigBuilder {
     }
 }
 
+/// An encoded CSRF token.
+///
+/// # Examples
+/// ```ignore
+/// use iron::Request;
+/// use iron_csrf::CsrfToken;
+///
+/// fn get_token(request: &Request) -> String{
+///     let token = request.extensions.get::<CsrfToken>().unwrap();
+///     token.b64_string()
+///     // CiDR/7m9X/3CVATatXBK72R7Clbvg2DwO74nO3oAO6BsYQ==
+/// }
+/// ```
 #[derive(Eq, PartialEq, Debug)]
 pub struct CsrfToken {
     nonce: Vec<u8>,
@@ -133,6 +158,7 @@ impl CsrfToken {
     }
 }
 
+/// Base trait that allows an `iron` application to be wrapped with CSRF protection.
 pub trait CsrfProtection: Sized + Send + Sync {
     fn rng(&self) -> &SystemRandom;
 
@@ -150,6 +176,7 @@ pub trait CsrfProtection: Sized + Send + Sync {
     }
 }
 
+/// Uses the Ed25519 DSA to sign and verify cookies.
 pub struct Ed25519CsrfProtection {
     // TODO make these refs?
     key_pair: Ed25519KeyPair,
@@ -190,6 +217,7 @@ impl CsrfProtection for Ed25519CsrfProtection {
     }
 }
 
+/// Uses HMAC to sign and verify cookies.
 pub struct HmacCsrfProtection {
     // TODO make these refs?
     key: SigningKey,
@@ -224,8 +252,11 @@ impl CsrfProtection for HmacCsrfProtection {
     }
 }
 
+/// An `enum` of all CSRF related errors.
 #[derive(Debug)]
-struct CsrfError {}
+pub enum CsrfError {
+    Undefined,
+}
 
 impl Error for CsrfError {
     fn description(&self) -> &str {
@@ -268,10 +299,10 @@ impl<P: CsrfProtection, H: Handler> CsrfHandler<P, H> {
                         if self.protect.verify_token_pair(&token, &cookie) {
                             Ok(())
                         } else {
-                            Err(IronError::new(CsrfError {}, status::InternalServerError))
+                            Err(IronError::new(CsrfError::Undefined, status::InternalServerError))
                         }
                     }
-                    _ => Err(IronError::new(CsrfError {}, status::Forbidden)),
+                    _ => Err(IronError::new(CsrfError::Undefined, status::Forbidden)),
                 }
             }
             _ => Ok(()),
@@ -309,7 +340,7 @@ impl<P: CsrfProtection, H: Handler> CsrfHandler<P, H> {
     fn extract_csrf_token_from_form(&self, mut request: &mut Request) -> Option<CsrfToken> {
         let token = request.get_ref::<UrlEncodedBody>()
             .ok()
-            .and_then(|form| form.get("csrf-token"))
+            .and_then(|form| form.get(CSRF_FORM_FIELD))
             .and_then(|v| v.first())
             .and_then(|token_str| CsrfToken::parse_b64(token_str).ok());
 
@@ -321,7 +352,7 @@ impl<P: CsrfProtection, H: Handler> CsrfHandler<P, H> {
     fn extract_csrf_token_from_query(&self, mut request: &mut Request) -> Option<CsrfToken> {
         let token = request.get_ref::<UrlEncodedQuery>()
             .ok()
-            .and_then(|query| query.get("csrf-token"))
+            .and_then(|query| query.get(CSRF_QUERY_STRING))
             .and_then(|v| v.first())
             .and_then(|token_str| CsrfToken::parse_b64(token_str).ok());
 
@@ -375,6 +406,9 @@ impl<P: CsrfProtection + Sized + 'static, H: Handler> Handler for CsrfHandler<P,
     }
 }
 
+/// An implementation of `iron::Middleware` that provides transparent wrapping of an application
+/// with CSRF protection.
+// TODO example
 pub struct CsrfProtectionMiddleware<P: CsrfProtection> {
     protect: P,
     config: CsrfConfig,
