@@ -87,6 +87,5 @@ mod csrf;
 mod serial;
 
 // TODO `pub use` these individually and give a short description
-pub use csrf::{CsrfProtection, HmacCsrfProtection, Ed25519CsrfProtection, CsrfToken,
-    XCsrfToken, CsrfConfig, CsrfConfigBuilder, CsrfProtectionMiddleware};
-
+pub use csrf::{CsrfProtection, HmacCsrfProtection, Ed25519CsrfProtection, CsrfToken, XCsrfToken,
+               CsrfConfig, CsrfConfigBuilder, CsrfProtectionMiddleware};
