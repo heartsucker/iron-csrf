@@ -1,8 +1,9 @@
 [package]
 name = "iron-csrf"
-version = "0.0.7"
+version = "0.0.8"
 authors = [ "heartsucker <heartsucker@autistici.org>" ]
 description = "CSRF protection for the web framework Iron"
+homepage = "https://github.com/heartsucker/iron-csrf"
 repository = "https://github.com/heartsucker/iron-csrf"
 documentation = "https://docs.rs/iron-csrf"
 readme = "README.md"
@@ -13,7 +14,7 @@ travis-ci = { repository = "https://github.com/heartsucker/iron-csrf", branch = 
 
 [dependencies]
 chrono = "^0.3"
-cookie = { verosion = "^0.6", features = [ "percent-encode" ] }
+cookie = { version = "^0.6", features = [ "percent-encode" ] }
 hyper = "^0.10"
 iron = "^0.5"
 protobuf = "^1.2"

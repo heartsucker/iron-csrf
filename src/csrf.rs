@@ -31,7 +31,7 @@ header! { (XCsrfToken, "X-CSRF-Token") => [String] }
 const CSRF_COOKIE_NAME: &'static str = "csrf";
 
 /// A struct representing a decoded CSRF cookie
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct CsrfCookie {
     // TODO padding
     expires: u64,
@@ -46,6 +46,27 @@ impl CsrfCookie {
             nonce: nonce,
             signature: signature,
         }
+    }
+
+    fn b64_string(&self) -> Result<String, ()> {
+        let mut transport = CsrfCookieTransport::new();
+        transport.set_expires(self.expires);
+        transport.set_nonce(self.nonce.clone());
+        transport.set_signature(self.signature.clone());
+        transport.write_to_bytes()
+            .map(|bytes| bytes.to_base64(STANDARD))
+            .map_err(|_| ())
+    }
+
+    fn parse_b64(string: &str) -> Result<Self, ()> {
+        let bytes = string.as_bytes().from_base64().map_err(|_| ())?;
+        protobuf::core::parse_from_bytes::<CsrfCookieTransport>(&bytes)
+            .map(|mut transport| {
+                CsrfCookie::new(transport.get_expires(),
+                                transport.take_nonce(),
+                                transport.take_signature())
+            })
+            .map_err(|_| ())
     }
 }
 
@@ -270,17 +291,7 @@ impl<P: CsrfProtection, H: Handler> CsrfHandler<P, H> {
                     })
                     .collect::<Vec<String>>()
                     .first()
-                    .and_then(|string| {
-                        protobuf::core::parse_from_bytes::<CsrfCookieTransport>(string.clone()
-                                .into_bytes()
-                                .as_slice())
-                            .ok()
-                    })
-            })
-            .map(|mut transport| {
-                CsrfCookie::new(transport.get_expires(),
-                                transport.take_nonce(),
-                                transport.take_signature())
+                    .and_then(|string| CsrfCookie::parse_b64(string).ok())
             })
     }
 
@@ -332,14 +343,14 @@ impl<P: CsrfProtection + Sized + 'static, H: Handler> Handler for CsrfHandler<P,
         // before
         self.validate_request(request)?;
         // TODO should this reuse the old nonce?
-        let (token, cookie) = self.protect.generate_token_pair(self.config.ttl_seconds);
+        let (token, csrf_cookie) = self.protect.generate_token_pair(self.config.ttl_seconds);
         let _ = request.extensions.insert::<CsrfToken>(token);
 
         // main
         let mut response = self.handler.handle(&mut request)?;
 
         // after
-        let nonce_str = cookie.nonce.as_slice().to_base64(STANDARD);
+        let nonce_str = csrf_cookie.b64_string().unwrap(); // TODO unwrap
         let cookie = Cookie::build("csrf", nonce_str)
             .path("/")
             //.http_only(true)
@@ -387,9 +398,17 @@ mod tests {
 
     #[test]
     fn test_csrf_token_serde() {
-        let token = CsrfToken::new(b"fake signature".to_vec());
+        let token = CsrfToken::new(b"fake nonce".to_vec());
         let parsed = CsrfToken::parse_b64(&token.b64_string().unwrap()).unwrap();
         assert_eq!(token, parsed)
+    }
+
+    #[test]
+    fn test_csrf_cookie_serde() {
+        let cookie = CsrfCookie::new(502, b"fake nonce".to_vec(), b"fake signature".to_vec());
+        let parsed = CsrfCookie::parse_b64(&cookie.b64_string().unwrap()).unwrap();
+        println!("{:?} {:?}", cookie, parsed);
+        assert_eq!(cookie, parsed)
     }
 
     #[test]
