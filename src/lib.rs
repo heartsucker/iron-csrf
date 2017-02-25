@@ -86,10 +86,8 @@ extern crate urlencoded;
 #[cfg(test)]
 extern crate urlencoding;
 
-mod csrf;
+mod core;
+pub mod error;
 mod serial;
 
-pub use csrf::{CSRF_COOKIE_NAME, CSRF_FORM_FIELD, CSRF_HEADER, CSRF_QUERY_STRING};
-
-pub use csrf::{CsrfConfig, CsrfConfigBuilder, CsrfCookie, CsrfError, CsrfToken, CsrfProtection,
-               CsrfProtectionMiddleware, Ed25519CsrfProtection, HmacCsrfProtection, XCsrfToken};
+pub use core::*;
