@@ -193,7 +193,7 @@ pub trait CsrfProtection: Sized + Send + Sync {
 
     fn generate_token_pair(&self, ttl_seconds: i64) -> Result<(CsrfToken, CsrfCookie), CsrfError> {
         let expires = time::precise_time_ns() + (ttl_seconds as u64) * 1_000_000;
-        let mut nonce = vec![0u8; 32];
+        let mut nonce = vec![0u8; 64];
         self.rng().fill(&mut nonce).map_err(|_| CsrfError::RngError)?;
         let sig = self.sign_bytes(&nonce);
         Ok((CsrfToken::new(nonce.clone()), CsrfCookie::new(expires, nonce, sig.to_vec())))
