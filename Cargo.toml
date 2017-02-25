@@ -12,6 +12,10 @@ keywords = [ "iron", "csrf", "web", "security" ]
 categories = [ "web-programming::http-server", "authentication", "cryptography" ]
 travis-ci = { repository = "https://github.com/heartsucker/iron-csrf", branch = "master" }
 
+[lib]
+name = "iron_csrf"
+path = "./src/lib.rs"
+
 [dependencies]
 chrono = "^0.3"
 cookie = { version = "^0.6", features = [ "percent-encode" ] }
@@ -24,6 +28,6 @@ time = "^0.1"
 untrusted = "^0.3"
 urlencoded = "^0.5"
 
-[lib]
-name = "iron_csrf"
-path = "./src/lib.rs"
+[dev-dependencies]
+iron-test = "^0.5"
+urlencoding = "^0.2"

@@ -52,7 +52,8 @@
 //! ## Protection
 //! There are three ways that `iron_csrf` checks for the presence of a CSRF token.
 //!
-//! - The field `csrf-token` in requests with `Content-Type: multipart/form-data`
+//! - The field `csrf-token` in requests with `Content-Type` of either `multipart/form-data`
+//! or `application/x-www-form-urlencoded`
 //! - The query parameter `csrf-token`
 //! - The header `X-CSRF-Token`
 //!
@@ -74,12 +75,16 @@ extern crate cookie;
 #[macro_use]
 extern crate hyper;
 extern crate iron;
+#[cfg(test)]
+extern crate iron_test;
 extern crate protobuf;
 extern crate ring;
 extern crate rustc_serialize;
 extern crate time;
 extern crate untrusted;
 extern crate urlencoded;
+#[cfg(test)]
+extern crate urlencoding;
 
 mod csrf;
 mod serial;
