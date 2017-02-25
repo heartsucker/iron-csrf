@@ -295,7 +295,7 @@ impl<P: CsrfProtection, H: Handler> CsrfHandler<P, H> {
         }
     }
 
-    fn validate_request(&self, mut request: &mut Request) -> IronResult<()> {
+    fn validate_request(&self, mut request: &mut Request) -> IronResult<Option<Response>> {
         if self.config.protected_methods.contains(&request.method) {
             let token_opt = self.extract_csrf_token(&mut request);
             let cookie_opt = self.extract_csrf_cookie(&request);
@@ -303,16 +303,16 @@ impl<P: CsrfProtection, H: Handler> CsrfHandler<P, H> {
             match (token_opt, cookie_opt) {
                 (Some(token), Some(cookie)) => {
                     if self.protect.verify_token_pair(&token, &cookie) {
-                        Ok(())
+                        Ok(None)
                     } else {
                         // TODO differentiate between server error and validation error
-                        Err(IronError::new(CsrfError::ValidationFailed, status::Forbidden)) //T
+                        Ok(Some(Response::with((status::Forbidden, "CSRF Error"))))
                     }
                 }
-                _ => Err(IronError::new(CsrfError::CriteriaMissing, status::Forbidden)),
+                _ => Ok(Some(Response::with((status::Forbidden, "CSRF Error")))),
             }
         } else {
-            Ok(())
+            Ok(None)
         }
     }
 
@@ -388,7 +388,9 @@ impl<P: CsrfProtection, H: Handler> CsrfHandler<P, H> {
 impl<P: CsrfProtection + Sized + 'static, H: Handler> Handler for CsrfHandler<P, H> {
     fn handle(&self, mut request: &mut Request) -> IronResult<Response> {
         // before
-        self.validate_request(request)?;
+        if let Some(response) = self.validate_request(request)? {
+            return Ok(response)
+        }
         // TODO should this reuse the old nonce?
         let (token, csrf_cookie) = self.protect.generate_token_pair(self.config.ttl_seconds)?;
         let _ = request.extensions.insert::<CsrfToken>(token);
@@ -397,7 +399,7 @@ impl<P: CsrfProtection + Sized + 'static, H: Handler> Handler for CsrfHandler<P,
         let mut response = self.handler.handle(&mut request)?;
 
         // after
-        let nonce_str = csrf_cookie.b64_string().unwrap(); // TODO unwrap
+        let nonce_str = csrf_cookie.b64_string().map_err(|_| CsrfError::NotBase64)?;
         let cookie = Cookie::build("csrf", nonce_str)
             .path("/")
             //.http_only(true)
@@ -577,17 +579,17 @@ mod tests {
             .unwrap();
         assert_eq!(response.status, Some(status::Ok));
 
-        let response = mock_request::post(path, headers.clone(), body, &handler).unwrap_err();
-        assert_eq!(response.response.status, Some(status::Forbidden));
+        let response = mock_request::post(path, headers.clone(), body, &handler).unwrap();
+        assert_eq!(response.status, Some(status::Forbidden));
 
-        let response = mock_request::put(path, headers.clone(), body, &handler).unwrap_err();
-        assert_eq!(response.response.status, Some(status::Forbidden));
+        let response = mock_request::put(path, headers.clone(), body, &handler).unwrap();
+        assert_eq!(response.status, Some(status::Forbidden));
 
-        let response = mock_request::put(path, headers.clone(), body, &handler).unwrap_err();
-        assert_eq!(response.response.status, Some(status::Forbidden));
+        let response = mock_request::put(path, headers.clone(), body, &handler).unwrap();
+        assert_eq!(response.status, Some(status::Forbidden));
 
-        let response = mock_request::patch(path, headers.clone(), body, &handler).unwrap_err();
-        assert_eq!(response.response.status, Some(status::Forbidden));
+        let response = mock_request::patch(path, headers.clone(), body, &handler).unwrap();
+        assert_eq!(response.status, Some(status::Forbidden));
 
         ///////////////////////////////////////////////////////////////////////////////////
 
