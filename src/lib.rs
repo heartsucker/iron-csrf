@@ -52,8 +52,7 @@
 //! ## Protection
 //! There are three ways that `iron_csrf` checks for the presence of a CSRF token.
 //!
-//! - The field `csrf-token` in requests with `Content-Type` of either `multipart/form-data`
-//! or `application/x-www-form-urlencoded`
+//! - The field `csrf-token` in requests with `Content-Type: application/x-www-form-urlencoded`
 //! - The query parameter `csrf-token`
 //! - The header `X-CSRF-Token`
 //!
@@ -69,6 +68,10 @@
 //!
 //! Signatures and other data needed for validation are stored in a cookie that is sent to the user
 //! via the `Set-Cookie` header.
+//!
+//! ## Unsupported: `multipart/form-data`
+//! Because of how the `iron` library handles middleware and streaming requests, it is not possible
+//! (or at least not feasible) at this time to intercept requests and check the multipart forms.
 
 extern crate chrono;
 extern crate cookie;

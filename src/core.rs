@@ -337,17 +337,11 @@ impl<P: CsrfProtection, H: Handler> CsrfHandler<P, H> {
     }
 
     fn extract_csrf_token(&self, mut request: &mut Request) -> Option<CsrfToken> {
-        let f_token = self.extract_csrf_token_from_multipart(&mut request)
-            .or(self.extract_csrf_token_from_form_url_encoded(&mut request));
+        let f_token = self.extract_csrf_token_from_form_url_encoded(&mut request);
         let q_token = self.extract_csrf_token_from_query(&mut request);
         let h_token = self.extract_csrf_token_from_headers(&mut request);
 
         f_token.or(q_token).or(h_token)
-    }
-
-    fn extract_csrf_token_from_multipart(&self, mut request: &mut Request) -> Option<CsrfToken> {
-        // TODO wait for crate multipart to support iron >= 0.5 in version 0.10.0
-        None
     }
 
     fn extract_csrf_token_from_form_url_encoded(&self, mut request: &mut Request) -> Option<CsrfToken> {
@@ -414,8 +408,6 @@ impl<P: CsrfProtection + Sized + 'static, H: Handler> Handler for CsrfHandler<P,
             }
         }
         response.headers.set(SetCookie(cookies));
-
-        // TODO figure out how display text like "Csrf error" to clients don't see a blank 403
 
         Ok(response)
     }
@@ -509,8 +501,6 @@ mod tests {
     }
 
     fn mock_handler(request: &mut Request) -> IronResult<Response> {
-        // TODO check that CSRF token isn't in header/form/query
-        // TODO check that CSRF token isn't in header/form/query
         // TODO check that CSRF token isn't in header/form/query
         // TODO check that CSRF cookie isn't in header
         let token = request.extensions.get::<CsrfToken>()
@@ -623,25 +613,6 @@ mod tests {
 
         ///////////////////////////////////////////////////////////////////////////////////
 
-        let boundary = "----wat502";
-        let path = "http://localhost/";
-        let mut headers = Headers::new();
-        headers.set(IronCookie(vec!(csrf_cookie.clone())));
-        headers.set_raw("content-type", vec!(format!("multipart/form-data; boundary={}", boundary).to_string().as_bytes().to_vec()));
-
-        let body = format!("{}\r\ncontent-disposition: form-data; name=\"{}\"\r\n\r\n{}\r\n{}\r\n", boundary, CSRF_FORM_FIELD, csrf_token, boundary);
-        let body = body.as_str();
-
-        for verb in body_methods.iter().cloned() {
-            /*
-            let response = mock_request::request(verb, path, body, headers.clone(), &handler)
-                .unwrap();
-            assert_eq!(response.status, Some(status::Ok));
-            */
-        }
-
-        ///////////////////////////////////////////////////////////////////////////////////
-
         let path = "http://localhost/";
         let mut headers = Headers::new();
         headers.set(IronCookie(vec!(csrf_cookie.clone())));
@@ -670,6 +641,13 @@ mod tests {
             .unwrap();
         let protect = Ed25519CsrfProtection::new(key_pair, key_bytes.public_key.to_vec());
         test_middleware(protect);
+
+        let key_pair = Ed25519KeyPair::from_bytes(&key_bytes.private_key, &key_bytes.public_key)
+            .unwrap();
+        let protect = Ed25519CsrfProtection::new(key_pair, key_bytes.public_key.to_vec());
+        let (token, _) = protect.generate_token_pair(300).unwrap();
+        let (_, cookie) = protect.generate_token_pair(300).unwrap();
+        assert!(!protect.verify_token_pair(&token, &cookie));
     }
 
     #[test]
@@ -683,6 +661,12 @@ mod tests {
         let key = hmac::SigningKey::generate(&digest::SHA512, &rng).unwrap();
         let protect = HmacCsrfProtection::new(key);
         test_middleware(protect);
+
+        let key = hmac::SigningKey::generate(&digest::SHA512, &rng).unwrap();
+        let protect = HmacCsrfProtection::new(key);
+        let (token, _) = protect.generate_token_pair(300).unwrap();
+        let (_, cookie) = protect.generate_token_pair(300).unwrap();
+        assert!(!protect.verify_token_pair(&token, &cookie));
     }
 
     // TODO test form extraction
