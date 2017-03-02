@@ -87,7 +87,6 @@ extern crate protobuf;
 extern crate ring;
 extern crate rustc_serialize;
 extern crate time;
-extern crate untrusted;
 extern crate urlencoded;
 #[cfg(test)]
 extern crate urlencoding;
