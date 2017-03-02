@@ -6,6 +6,6 @@ help: ## Print this help message and exit
 
 build: ## Compile the proto files and run cargo
 	# requires `apt-get install protobuf-compiler` and `cargo install protobuf`
-	@protoc proto/serial.proto --rust_out src/ && \
+	@protoc proto/transport.proto --rust_out src/ && \
 		cargo build && \
 		cargo doc --no-deps

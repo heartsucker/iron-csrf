@@ -14,24 +14,22 @@
 //! ```
 //! extern crate iron;
 //! extern crate iron_csrf;
-//! extern crate ring;
 //!
 //! use iron::AroundMiddleware;
 //! use iron::prelude::*;
 //! use iron::status;
-//! use iron_csrf::{CsrfProtectionMiddleware, HmacCsrfProtection, CsrfToken, CsrfConfig};
-//! use ring::{digest, hmac};
-//! use ring::rand::SystemRandom;
+//! use iron_csrf::{CsrfProtectionMiddleware, CsrfToken, CsrfConfig,
+//!     ChaCha20Poly1305CsrfProtection};
 //!
 //! fn main() {
 //!     // Make a key
 //!     // Note: You will want to load a persistent key in production
-//!     let rng = SystemRandom::new();
-//!     let key = hmac::SigningKey::generate(&digest::SHA512, &rng).unwrap();
+//!     // TODO
 //!
 //!     // Set up CSRF protection with the default config
-//!     let protect = HmacCsrfProtection::new(key);
-//!     let config = CsrfConfig::build().ttl_seconds(300).finish().unwrap();
+//!     let password = b"correct horse battery staple";
+//!     let protect = ChaCha20Poly1305CsrfProtection::from_password(password).unwrap();
+//!     let config = CsrfConfig::default();
 //!     let middleware = CsrfProtectionMiddleware::new(protect, config);
 //!
 //!     // Set up routes
@@ -43,7 +41,7 @@
 //!
 //! fn index(request: &mut Request) -> IronResult<Response> {
 //!     let token = request.extensions.get::<CsrfToken>().unwrap();
-//!     let msg = format!("Hello, CSRF Token: {}", token.b64_string().unwrap());
+//!     let msg = format!("Hello, CSRF Token: {}", token.b64_string());
 //!     Ok(Response::with((status::Ok, msg)))
 //! }
 //!
@@ -75,11 +73,16 @@
 
 extern crate chrono;
 extern crate cookie;
+extern crate crypto;
+#[cfg(test)]
+extern crate env_logger;
 #[macro_use]
 extern crate hyper;
 extern crate iron;
 #[cfg(test)]
 extern crate iron_test;
+#[macro_use]
+extern crate log;
 extern crate protobuf;
 extern crate ring;
 extern crate rustc_serialize;
@@ -91,6 +94,6 @@ extern crate urlencoding;
 
 mod core;
 pub mod error;
-mod serial;
+mod transport;
 
 pub use core::*;

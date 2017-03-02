@@ -1,4 +1,5 @@
 //! Module containing the CSRF error types.
+//!
 
 use std::error::Error;
 use std::fmt;
@@ -9,22 +10,16 @@ use iron::status;
 /// An `enum` of all CSRF related errors.
 #[derive(Debug)]
 pub enum CsrfError {
-    /// The necessary pieces to validate a request were missing. This could mean the either the
-    /// cookie or the token, query string, or form field are missing.
-    CriteriaMissing,
-    /// Input was not able to be converted from Base64.
-    NotBase64,
-    /// Random data was unable to be generated.
-    RngError,
-    /// Generic error case. Uncatchable by consumers of this crate.
-    Undefined(String),
-    /// The CSRF validation failed.
-    ValidationFailed,
+    InternalError,
+    ValidationFailure,
 }
 
 impl Error for CsrfError {
     fn description(&self) -> &str {
-        "CSRF Error"
+        match *self {
+            CsrfError::InternalError => "Internal Server Error (CSRF)",
+            CsrfError::ValidationFailure => "Forbidden: CSRF Validation Failed",
+        }
     }
 }
 
@@ -41,4 +36,11 @@ impl From<CsrfError> for IronError {
             error: Box::new(err),
         }
     }
+}
+
+pub enum CsrfConfigError {
+    // TODO add more of these
+    InvalidTtl,
+    NoProtectedMethods,
+    Unspecified,
 }
