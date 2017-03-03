@@ -10,9 +10,6 @@ use iron::status;
 use iron_csrf::{CsrfToken, CsrfProtectionMiddleware, CsrfConfig, ChaCha20Poly1305CsrfProtection};
 
 fn main() {
-    // generate some crypto keys
-    // TODO
-
     // initialize the CSRF protection
     let password = b"very-very-secret";
     let protect = ChaCha20Poly1305CsrfProtection::from_password(password).unwrap();
