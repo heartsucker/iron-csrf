@@ -93,6 +93,7 @@ pub struct CsrfConfig {
     // TODO make this an Option
     ttl_seconds: i64,
     protected_methods: HashSet<method::Method>,
+    secure_cookie: bool,
 }
 
 impl CsrfConfig {
@@ -113,6 +114,7 @@ impl Default for CsrfConfig {
         CsrfConfig {
             ttl_seconds: 3600,
             protected_methods: protected_methods,
+            secure_cookie: false,
         }
     }
 }
@@ -124,14 +126,27 @@ pub struct CsrfConfigBuilder {
 
 impl CsrfConfigBuilder {
     /// Set the TTL in seconds for CSRF cookies and tokens.
+    ///
+    /// Default: 3600
     pub fn ttl_seconds(mut self, ttl_seconds: i64) -> Self {
         self.config.ttl_seconds = ttl_seconds;
         self
     }
 
     /// Set the HTTP methods that are require CSRF protection.
+    ///
+    /// Default: `POST`, `PUT`, `PATCH`, `DELETE`
     pub fn protected_methods(mut self, protected_methods: HashSet<method::Method>) -> Self {
         self.config.protected_methods = protected_methods;
+        self
+    }
+
+    /// Set the `Secure` flag on the CSRF cookie. If this is set to true, then user agents will
+    /// only send the cookie over HTTPS.
+    ///
+    /// Default: false/absent.
+    pub fn secure_cookie(mut self, secure_cookie: bool) -> Self {
+        self.config.secure_cookie = secure_cookie;
         self
     }
 
@@ -498,7 +513,7 @@ impl<P: CsrfProtection + Sized + 'static, H: Handler> Handler for CsrfHandler<P,
             // TODO config for path
             .path("/")
             .http_only(true)
-            // TODO config flag for Secure
+            .secure(self.config.secure_cookie)
             // TODO config flag for SameSite
             .max_age(Duration::seconds(self.config.ttl_seconds))
             .finish();
