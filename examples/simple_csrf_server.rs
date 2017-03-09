@@ -7,15 +7,16 @@ use iron::method;
 use iron::prelude::*;
 use iron::status;
 
-use iron_csrf::{CsrfToken, CsrfProtectionMiddleware, CsrfConfig, ChaCha20Poly1305CsrfProtection};
+use iron_csrf::{CsrfToken, CsrfProtectionMiddleware, CsrfConfig, CsrfProtection};
 
 fn main() {
     // initialize the CSRF protection
     let password = b"very-very-secret";
-    let protect = ChaCha20Poly1305CsrfProtection::from_password(password).unwrap();
+    let protect = CsrfProtection::from_password(password).unwrap();
     let config = CsrfConfig::default();
     let middleware = CsrfProtectionMiddleware::new(protect, config);
 
+    // wrap the routes
     let handler = middleware.around(Box::new(index));
 
     // awwwww yissssssss

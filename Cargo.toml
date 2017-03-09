@@ -1,6 +1,6 @@
 [package]
 name = "iron-csrf"
-version = "0.0.11"
+version = "0.0.12"
 authors = [ "heartsucker <heartsucker@autistici.org>" ]
 description = "CSRF protection for the web framework Iron"
 homepage = "https://github.com/heartsucker/iron-csrf"
@@ -22,7 +22,6 @@ cookie = { version = "^0.6", features = [ "percent-encode" ] }
 hyper = "^0.10"
 iron = "^0.5"
 log = "^0.3"
-protobuf = "^1.2"
 ring = "^0.7"
 rust-crypto = "^0.2.36"
 rustc-serialize = "^0.3"
@@ -30,6 +29,4 @@ time = "^0.1"
 urlencoded = "^0.5"
 
 [dev-dependencies]
-env_logger = "^0.4"
 iron-test = "^0.5"
-urlencoding = "^0.2"

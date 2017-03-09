@@ -18,17 +18,12 @@
 //! use iron::AroundMiddleware;
 //! use iron::prelude::*;
 //! use iron::status;
-//! use iron_csrf::{CsrfProtectionMiddleware, CsrfToken, CsrfConfig,
-//!     ChaCha20Poly1305CsrfProtection};
+//! use iron_csrf::{CsrfProtectionMiddleware, CsrfToken, CsrfConfig, CsrfProtection};
 //!
 //! fn main() {
-//!     // Make a key
-//!     // Note: You will want to load a persistent key in production
-//!     // TODO
-//!
 //!     // Set up CSRF protection with the default config
 //!     let password = b"correct horse battery staple";
-//!     let protect = ChaCha20Poly1305CsrfProtection::from_password(password).unwrap();
+//!     let protect = CsrfProtection::from_password(password).unwrap();
 //!     let config = CsrfConfig::default();
 //!     let middleware = CsrfProtectionMiddleware::new(protect, config);
 //!
@@ -67,15 +62,15 @@
 //! Signatures and other data needed for validation are stored in a cookie that is sent to the user
 //! via the `Set-Cookie` header.
 //!
-//! ## Unsupported: `multipart/form-data`
+//! ## Unsupported: Token in `multipart/form-data`
 //! Because of how the `iron` library handles middleware and streaming requests, it is not possible
-//! (or at least not feasible) at this time to intercept requests and check the multipart forms.
+//! (or at least not feasible) at this time to intercept requests and check the multipart forms. To
+//! add protection for requests with `Content-Type: multipart/form-data`, you should include the
+//! CSRF token in the query string.
 
 extern crate chrono;
 extern crate cookie;
 extern crate crypto;
-#[cfg(test)]
-extern crate env_logger;
 #[macro_use]
 extern crate hyper;
 extern crate iron;
@@ -83,16 +78,12 @@ extern crate iron;
 extern crate iron_test;
 #[macro_use]
 extern crate log;
-extern crate protobuf;
 extern crate ring;
 extern crate rustc_serialize;
 extern crate time;
 extern crate urlencoded;
-#[cfg(test)]
-extern crate urlencoding;
 
 mod core;
 pub mod error;
-mod transport;
 
 pub use core::*;
