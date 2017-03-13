@@ -6,12 +6,10 @@ use std::str;
 
 use chrono::Duration;
 use cookie::Cookie;
-use crypto::aessafe::{AesSafe256Encryptor, AesSafe256Decryptor};
-use crypto::hmac::Hmac;
-use crypto::mac::{MacResult, Mac};
+use crypto::aead::{AeadEncryptor, AeadDecryptor};
+use crypto::aes::KeySize;
+use crypto::aes_gcm::AesGcm;
 use crypto::scrypt::{scrypt, ScryptParams};
-use crypto::sha2::Sha512;
-use crypto::symmetriccipher::{BlockEncryptor, BlockDecryptor};
 use iron::headers::{SetCookie, Cookie as IronCookie};
 use iron::method;
 use iron::middleware::{AroundMiddleware, Handler};
@@ -201,7 +199,6 @@ impl CsrfConfigBuilder {
 pub struct CsrfProtection {
     rng: SystemRandom,
     aes_key: [u8; 32],
-    hmac_key: [u8; 32],
 }
 
 impl CsrfProtection {
@@ -210,7 +207,7 @@ impl CsrfProtection {
     /// underlying crypto functions.
     ///
     /// # Panics
-    /// This function may panic if the underlying library fails catastrophically.
+    /// This function may panic if the underlying crypto library fails catastrophically.
     pub fn from_password(password: &[u8]) -> Result<CsrfProtection, CsrfError> {
         // TODO add check for password length
 
@@ -221,85 +218,21 @@ impl CsrfProtection {
         let params = ScryptParams::new(14, 8, 1);
 
         let salt = b"iron-csrf-scrypt-salt";
-        let mut out = [0; 64];
-        info!("Generating key material. This may take some time.");
-        scrypt(password, salt, &params, &mut out);
-        info!("Key material generated.");
-
         let mut aes_key = [0; 32];
-        let mut hmac_key = [0; 32];
-
-        for i in 0..32 {
-            aes_key[i] = out[i]
-        }
-
-        for i in 0..32 {
-            hmac_key[i] = out[i + 32]
-        }
+        info!("Generating key material. This may take some time.");
+        scrypt(password, salt, &params, &mut aes_key);
+        info!("Key material generated.");
 
         let protect = CsrfProtection {
             rng: SystemRandom::new(),
             aes_key: aes_key,
-            hmac_key: hmac_key,
         };
-
-        // create these once so that if the params are bad, the panic happens during the program
-        // init, not during the first request
-        let i = vec![0; 16];
-        let mut o = vec![0; 16];
-        let _ = protect.aes_encrypt(&i, &mut o);
-        let _ = protect.aes_decrypt(&i, &mut o);
 
         Ok(protect)
     }
 
-    fn hmac_make(&self, msg: &[u8], mut sig: &mut [u8]) {
-        let mut hmac = Hmac::new(Sha512::new(), &self.hmac_key);
-        hmac.input(&msg);
-        hmac.raw_result(&mut sig);
-    }
-
-    fn hmac_check(&self, msg: &[u8], sig: &[u8]) -> bool {
-        let mut hmac = Hmac::new(Sha512::new(), &self.hmac_key);
-        hmac.input(&msg);
-        let gen_sig = hmac.result();
-        let sig = MacResult::new(sig);
-
-        gen_sig == sig
-    }
-
-    fn aes_encrypt(&self, msg: &[u8], out: &mut [u8]) {
-        if cfg!(test) {
-            assert!(msg.len() == out.len());
-            assert!(msg.len() % 16 == 0);
-        }
-
-        let aes = AesSafe256Encryptor::new(&self.aes_key);
-        let mut tmp = [0; 16];
-
-        for (i, v) in msg.chunks(16).enumerate() {
-            aes.encrypt_block(&v, &mut tmp);
-            for j in 0..16 {
-                out[i * 16 + j] = tmp[j];
-            }
-        }
-    }
-
-    fn aes_decrypt(&self, msg: &[u8], out: &mut [u8]) {
-        if cfg!(test) {
-            assert!(msg.len() == out.len());
-            assert!(msg.len() % 16 == 0);
-        }
-
-        let aes = AesSafe256Decryptor::new(&self.aes_key);
-        let mut tmp = [0; 16];
-
-        for (i, v) in msg.chunks(16).enumerate() {
-            aes.decrypt_block(&v, &mut tmp);
-            for j in 0..16 {
-                out[i * 16 + j] = tmp[j];
-            }
-        }
+    fn aead<'a>(&self, nonce: &[u8; 12]) -> AesGcm<'a> {
+        AesGcm::new(KeySize::KeySize256, &self.aes_key, nonce, &[])
     }
 
     fn random_bytes(&self, buf: &mut [u8]) -> Result<(), CsrfError> {
@@ -318,140 +251,168 @@ impl CsrfProtection {
     }
 
     fn generate_cookie(&self, token: &[u8], ttl_seconds: i64) -> Result<CsrfCookie, CsrfError> {
+        if cfg!(test) {
+            assert!(token.len() == 64);
+        }
+
         let expires = time::precise_time_s() as i64 + ttl_seconds;
         let expires_bytes = unsafe { mem::transmute::<i64, [u8; 8]>(expires) };
 
-        let mut padding = [0; 40];
+        let mut nonce = [0; 12];
+        self.random_bytes(&mut nonce)?;
+
+        let mut padding = [0; 16];
         self.random_bytes(&mut padding)?;
 
-        let mut unencrypted_bytes = [0; 112];
+        let mut plaintext = [0; 88];
 
-        for i in 0..32 {
-            unencrypted_bytes[i] = padding[i];
+        for i in 0..16 {
+            plaintext[i] = padding[i];
         }
         for i in 0..8 {
-            unencrypted_bytes[i + 32] = expires_bytes[i];
+            plaintext[i + 16] = expires_bytes[i];
         }
         for i in 0..64 {
-            unencrypted_bytes[i + 40] = token[i];
-        }
-        for i in 0..8 {
-            unencrypted_bytes[i + 104] = padding[i + 32];
+            plaintext[i + 24] = token[i];
         }
 
-        let mut encrypted_bytes = [0; 112];
-        self.aes_encrypt(&unencrypted_bytes, &mut encrypted_bytes);
+        let mut ciphertext = [0; 88];
+        let mut tag = [0; 16];
+        let mut aead = self.aead(&nonce);
 
-        let mut sig = [0; 64];
-        self.hmac_make(&encrypted_bytes, &mut sig);
+        aead.encrypt(&plaintext, &mut ciphertext, &mut tag);
 
-        let mut transport = [0; 176];
-        for i in 0..112 {
-            transport[i] = encrypted_bytes[i];
+        let mut transport = [0; 116];
+
+        for i in 0..88 {
+            transport[i] = ciphertext[i];
         }
-        for i in 0..64 {
-            transport[i + 112] = sig[i];
+        for i in 0..12 {
+            transport[i + 88] = nonce[i];
+        }
+        for i in 0..16 {
+            transport[i + 100] = tag[i];
         }
 
         Ok(CsrfCookie::new(transport.to_vec()))
     }
 
     fn generate_token(&self, token: &[u8]) -> Result<CsrfToken, CsrfError> {
-        let mut padding = [0; 32];
+        if cfg!(test) {
+            assert!(token.len() == 64);
+        }
+
+        let mut nonce = [0; 12];
+        self.random_bytes(&mut nonce)?;
+
+        let mut padding = [0; 16];
         self.random_bytes(&mut padding)?;
 
-        let mut unencrypted_bytes = [0; 96];
+        let mut plaintext = [0; 80];
 
-        for i in 0..32 {
-            unencrypted_bytes[i] = padding[i];
+        for i in 0..16 {
+            plaintext[i] = padding[i];
         }
         for i in 0..64 {
-            unencrypted_bytes[i + 32] = token[i];
+            plaintext[i + 16] = token[i];
         }
 
-        let mut encrypted_bytes = [0; 96];
-        self.aes_encrypt(&unencrypted_bytes, &mut encrypted_bytes);
+        let mut ciphertext = [0; 80];
+        let mut tag = vec![0; 16];
+        let mut aead = self.aead(&nonce);
 
-        let mut sig = [0; 64];
-        self.hmac_make(&encrypted_bytes, &mut sig);
+        aead.encrypt(&plaintext, &mut ciphertext, &mut tag);
 
-        let mut transport = [0; 160];
-        for i in 0..96 {
-            transport[i] = encrypted_bytes[i];
+        let mut transport = [0; 108];
+
+        for i in 0..80 {
+            transport[i] = ciphertext[i];
         }
-        for i in 0..64 {
-            transport[i + 96] = sig[i];
+        for i in 0..12 {
+            transport[i + 80] = nonce[i];
+        }
+        for i in 0..16 {
+            transport[i + 92] = tag[i];
         }
 
         Ok(CsrfToken::new(transport.to_vec()))
     }
 
     fn parse_cookie(&self, cookie: &[u8]) -> Result<UnencryptedCsrfCookie, CsrfError> {
-        if cookie.len() != 176 {
+        if cookie.len() != 116 {
             return Err(CsrfError::ValidationFailure);
         }
 
-        let mut encrypted_bytes = [0; 112];
-        let mut sig = [0; 64];
+        let mut ciphertext = [0; 88];
+        let mut plaintext = [0; 88];
+        let mut nonce = [0; 12];
+        let mut tag = [0; 16];
 
-        for i in 0..112 {
-            encrypted_bytes[i] = cookie[i];
+        for i in 0..88 {
+            ciphertext[i] = cookie[i];
         }
-        for i in 0..64 {
-            sig[i] = cookie[i + 112];
+        for i in 0..12 {
+            nonce[i] = cookie[i + 88];
+        }
+        for i in 0..16 {
+            tag[i] = cookie[i + 100];
         }
 
-        if !self.hmac_check(&encrypted_bytes, &sig) {
+        let mut aead = self.aead(&nonce);
+        if !aead.decrypt(&ciphertext, &mut plaintext, &tag) {
+            info!("Failed to decrypt CSRF cookie");
             return Err(CsrfError::ValidationFailure);
         }
 
-        let mut unencrypted_bytes = [0; 112];
-        self.aes_decrypt(&encrypted_bytes, &mut unencrypted_bytes);
-
-        let mut expires = [0; 8];
+        let mut expires_bytes = [0; 8];
         let mut token = [0; 64];
 
+        // skip 16 bytes of padding
         for i in 0..8 {
-            expires[i] = unencrypted_bytes[i + 32];
+            expires_bytes[i] = plaintext[i + 16];
         }
         for i in 0..64 {
-            token[i] = unencrypted_bytes[i + 40];
+            token[i] = plaintext[i + 24];
         }
 
-        let expires = unsafe { mem::transmute::<[u8; 8], i64>(expires) };
+        let expires = unsafe { mem::transmute::<[u8; 8], i64>(expires_bytes)  };
 
-        println!("parsed cookie");
         Ok(UnencryptedCsrfCookie::new(expires, token.to_vec()))
     }
 
     fn parse_token(&self, token: &[u8]) -> Result<UnencryptedCsrfToken, CsrfError> {
-        if token.len() != 160 {
+        if token.len() != 108 {
             return Err(CsrfError::ValidationFailure);
         }
 
-        let mut encrypted_bytes = [0; 96];
-        let mut sig = [0; 64];
+        let mut ciphertext = [0; 80];
+        let mut plaintext = [0; 80];
+        let mut nonce = [0; 12];
+        let mut tag = [0; 16];
 
-        for i in 0..96 {
-            encrypted_bytes[i] = token[i];
+        for i in 0..80 {
+            ciphertext[i] = token[i];
         }
-        for i in 0..64 {
-            sig[i] = token[i + 96];
+        for i in 0..12 {
+            nonce[i] = token[i + 80];
+        }
+        for i in 0..16 {
+            tag[i] = token[i + 92];
         }
 
-        if !self.hmac_check(&encrypted_bytes, &sig) {
+        let mut aead = self.aead(&nonce);
+        if !aead.decrypt(&ciphertext, &mut plaintext, &tag) {
+            info!("Failed to decrypt CSRF token");
             return Err(CsrfError::ValidationFailure);
         }
-
-        let mut unencrypted_bytes = [0; 96];
-        self.aes_decrypt(&encrypted_bytes, &mut unencrypted_bytes);
 
         let mut token = [0; 64];
+
+        // skip 16 bytes of padding
         for i in 0..64 {
-            token[i] = unencrypted_bytes[i + 32];
+            token[i] = plaintext[i + 16];
         }
 
-        println!("parsed token");
         Ok(UnencryptedCsrfToken::new(token.to_vec()))
     }
 
@@ -582,8 +543,7 @@ impl<H: Handler> Handler for CsrfHandler<H> {
             .and_then(|c| self.protect.parse_cookie(&c).ok());
 
         if self.config.protected_methods.contains(&request.method) {
-            println!("csrf elements present. token: {}, cookie: {}",
-            //debug!("csrf elements present. token: {}, cookie: {}",
+            debug!("csrf elements present. token: {}, cookie: {}",
                    token_opt.is_some(),
                    cookie_opt.is_some());
 
