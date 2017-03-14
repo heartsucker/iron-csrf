@@ -23,7 +23,7 @@
 //! fn main() {
 //!     // Set up CSRF protection with the default config
 //!     let password = b"correct horse battery staple";
-//!     let protect = CsrfProtection::from_password(password).unwrap();
+//!     let protect = CsrfProtection::from_password(password);
 //!     let config = CsrfConfig::default();
 //!     let middleware = CsrfProtectionMiddleware::new(protect, config);
 //!
@@ -76,6 +76,9 @@ extern crate hyper;
 extern crate iron;
 #[cfg(test)]
 extern crate iron_test;
+#[cfg(test)]
+#[macro_use]
+extern crate lazy_static;
 #[macro_use]
 extern crate log;
 extern crate ring;
@@ -84,6 +87,4 @@ extern crate time;
 extern crate urlencoded;
 
 mod core;
-pub mod error;
-
 pub use core::*;

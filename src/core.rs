@@ -1,8 +1,8 @@
 //! Module containing the core functionality for CSRF protection.
 
+use std::error::Error;
 use std::collections::HashSet;
-use std::mem;
-use std::str;
+use std::{fmt, mem, str};
 
 use chrono::Duration;
 use cookie::Cookie;
@@ -21,7 +21,6 @@ use rustc_serialize::base64::{self, FromBase64, ToBase64};
 use time;
 use urlencoded::{UrlEncodedQuery, UrlEncodedBody};
 
-use error::{CsrfError, CsrfConfigError};
 
 /// The name of the cookie for the CSRF validation data and signature.
 pub const CSRF_COOKIE_NAME: &'static str = "csrf";
@@ -34,6 +33,44 @@ pub const CSRF_HEADER: &'static str = "X-CSRF-Token";
 
 /// The name of the query parameter for the CSRF token.
 pub const CSRF_QUERY_STRING: &'static str = "csrf-token";
+
+/// An `enum` of all CSRF related errors.
+#[derive(Debug)]
+pub enum CsrfError {
+    InternalError,
+    ValidationFailure,
+}
+
+impl Error for CsrfError {
+    fn description(&self) -> &str {
+        match *self {
+            CsrfError::InternalError => "CSRF library error",
+            CsrfError::ValidationFailure => "CSRF validation failed",
+        }
+    }
+}
+
+impl fmt::Display for CsrfError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
+impl From<CsrfError> for IronError {
+    fn from(err: CsrfError) -> IronError {
+        IronError {
+            response: Response::with((status::Forbidden, format!("{}", err))),
+            error: Box::new(err),
+        }
+    }
+}
+
+pub enum CsrfConfigError {
+    // TODO add more of these
+    InvalidTtl,
+    NoProtectedMethods,
+    Unspecified,
+}
 
 // TODO why doesn't this show up in the docs?
 /// The HTTP header for the CSRF token.
@@ -97,9 +134,7 @@ struct UnencryptedCsrfToken {
 
 impl UnencryptedCsrfToken {
     fn new(token: Vec<u8>) -> Self {
-        UnencryptedCsrfToken {
-            token: token,
-        }
+        UnencryptedCsrfToken { token: token }
     }
 }
 
@@ -128,7 +163,6 @@ pub struct CsrfConfig {
 }
 
 impl CsrfConfig {
-
     /// Create a new builder that is initializd with the default configuration.
     pub fn build() -> CsrfConfigBuilder {
         CsrfConfigBuilder { config: CsrfConfig::default() }
@@ -202,15 +236,12 @@ pub struct CsrfProtection {
 }
 
 impl CsrfProtection {
-
     /// Using `scrypt` with params `n=14`, `r=8`, `p=1`, generate the key material used for the
     /// underlying crypto functions.
     ///
     /// # Panics
     /// This function may panic if the underlying crypto library fails catastrophically.
-    pub fn from_password(password: &[u8]) -> Result<CsrfProtection, CsrfError> {
-        // TODO add check for password length
-
+    pub fn from_password(password: &[u8]) -> CsrfProtection {
         // scrypt is *slow*, so use these params for testing
         #[cfg(test)]
         let params = ScryptParams::new(1, 8, 1);
@@ -223,12 +254,14 @@ impl CsrfProtection {
         scrypt(password, salt, &params, &mut aes_key);
         info!("Key material generated.");
 
-        let protect = CsrfProtection {
+        CsrfProtection::from_key(aes_key)
+    }
+
+    pub fn from_key(aes_key: [u8; 32]) -> Self {
+        CsrfProtection {
             rng: SystemRandom::new(),
             aes_key: aes_key,
-        };
-
-        Ok(protect)
+        }
     }
 
     fn aead<'a>(&self, nonce: &[u8; 12]) -> AesGcm<'a> {
@@ -244,7 +277,10 @@ impl CsrfProtection {
             })
     }
 
-    fn verify_token_pair(&self, token: &UnencryptedCsrfToken, cookie: &UnencryptedCsrfCookie) -> bool {
+    fn verify_token_pair(&self,
+                         token: &UnencryptedCsrfToken,
+                         cookie: &UnencryptedCsrfCookie)
+                         -> bool {
         let tokens_match = token.token == cookie.token;
         let not_expired = cookie.expires > time::precise_time_s() as i64;
         tokens_match && not_expired
@@ -375,7 +411,7 @@ impl CsrfProtection {
             token[i] = plaintext[i + 24];
         }
 
-        let expires = unsafe { mem::transmute::<[u8; 8], i64>(expires_bytes)  };
+        let expires = unsafe { mem::transmute::<[u8; 8], i64>(expires_bytes) };
 
         Ok(UnencryptedCsrfCookie::new(expires, token.to_vec()))
     }
@@ -416,7 +452,10 @@ impl CsrfProtection {
         Ok(UnencryptedCsrfToken::new(token.to_vec()))
     }
 
-    fn generate_token_pair(&self, previous_token: Option<Vec<u8>>, ttl_seconds: i64) -> Result<(CsrfToken, CsrfCookie), CsrfError> {
+    fn generate_token_pair(&self,
+                           previous_token: Option<Vec<u8>>,
+                           ttl_seconds: i64)
+                           -> Result<(CsrfToken, CsrfCookie), CsrfError> {
         let mut token = vec![0; 64];
         match previous_token {
             Some(ref previous) if previous.len() == 64 => {
@@ -559,8 +598,8 @@ impl<H: Handler> Handler for CsrfHandler<H> {
             }
         }
 
-        let (token, csrf_cookie) = self.protect.generate_token_pair(token_opt.map(|t| t.token),
-                                                                    self.config.ttl_seconds)?;
+        let (token, csrf_cookie) = self.protect
+            .generate_token_pair(token_opt.map(|t| t.token), self.config.ttl_seconds)?;
         let _ = request.extensions.insert::<CsrfToken>(token);
 
         // main
@@ -620,13 +659,32 @@ mod tests {
     use iron_test::request as mock_request;
     use iron_test::response::extract_body_to_string;
 
+    lazy_static! {
+        static ref BODY_METHODS: Vec<method::Method> = vec![method::Post,
+                                                        method::Put,
+                                                        method::Patch,
+                                                        method::Connect,
+                                                        Extension("WAT".to_string())];
+    }
+
+    lazy_static! {
+        static ref ALL_METHODS: Vec<method::Method> = vec![method::Get,
+                                                       method::Post,
+                                                       method::Put,
+                                                       method::Patch,
+                                                       method::Delete,
+                                                       method::Options,
+                                                       method::Connect,
+                                                       method::Trace,
+                                                       Extension("WAT".to_string())];
+    }
+
     // TODO write test that ensures encrypted messages don't contain the plaintext
 
     #[test]
-    fn test_csrf_protection_basics() {
+    fn cookies_and_tokens_can_be_verfied() {
         let password = b"hunter2";
-        let protect = CsrfProtection::from_password(password)
-            .expect("couldn't create protection");
+        let protect = CsrfProtection::from_password(password);
         let (token, cookie) = protect.generate_token_pair(None, 300)
             .expect("couldn't generate token/cookie pair");
         let token = token.b64_string().from_base64().expect("token not base64");
@@ -638,7 +696,7 @@ mod tests {
     }
 
     #[test]
-    fn test_config() {
+    fn config_properties() {
         // ttl of 0 is allowed
         assert!(CsrfConfig::build().ttl_seconds(0).finish().is_ok());
 
@@ -649,54 +707,104 @@ mod tests {
         assert!(CsrfConfig::build().protected_methods(HashSet::new()).finish().is_err())
     }
 
-    fn test_encrypted_protection(middleware: CsrfProtectionMiddleware) {
-        // check token validates
+    fn get_middleware() -> CsrfProtectionMiddleware {
+        let password = b"hunter2";
+        let protect = CsrfProtection::from_password(password);
+        CsrfProtectionMiddleware::new(protect, CsrfConfig::default())
+    }
+
+    #[test]
+    fn middleware_validates_token() {
+        let middleware = get_middleware();
+
         let (token, cookie) = middleware.protect.generate_token_pair(None, 300).unwrap();
         let token = token.b64_string().from_base64().expect("token not base64");
         let token = middleware.protect.parse_token(&token).expect("token not parsed");
         let cookie = cookie.b64_string().from_base64().expect("cookie not base64");
         let cookie = middleware.protect.parse_cookie(&cookie).expect("cookie not parsed");
-        assert!(middleware.protect.verify_token_pair(&token, &cookie));
 
-        // check modified token doesn't validate
-        let (token, cookie) = middleware.protect.generate_token_pair(None,300).unwrap();
+        assert!(middleware.protect.verify_token_pair(&token, &cookie));
+    }
+
+    #[test]
+    fn middleware_fails_modified_token() {
+        let middleware = get_middleware();
+
+        let (token, _) = middleware.protect.generate_token_pair(None, 300).unwrap();
         let mut token = token.b64_string().from_base64().expect("token not base64");
+
+        // flip a bit in the padding
         token[0] = token[0] ^ 0x01;
         assert!(middleware.protect.parse_token(&token).is_err());
         token[0] = token[0] ^ 0x01; // flip the bit back
+
+        // flip a bit in the token
+        token[16] = token[16] ^ 0x01;
+        assert!(middleware.protect.parse_token(&token).is_err());
+        token[16] = token[16] ^ 0x01; // flip the bit back
+
+        // flip a bit in the tag
         let len = token.len();
         token[len - 1] = token[len - 1] ^ 0x01;
         assert!(middleware.protect.parse_token(&token).is_err());
+    }
 
-        // check modified cookie doesn't validate
+    #[test]
+    fn middleware_fails_modified_cookie() {
+        let middleware = get_middleware();
+
+        let (_, cookie) = middleware.protect.generate_token_pair(None, 300).unwrap();
         let mut cookie = cookie.b64_string().from_base64().expect("cookie not base64");
+
+        // flip a bit in the padding
         cookie[0] = cookie[0] ^ 0x01;
         assert!(middleware.protect.parse_cookie(&cookie).is_err());
         cookie[0] = cookie[0] ^ 0x01; // flip the bit back
+
+        // flip a bit in the expiry/token
+        cookie[16] = cookie[16] ^ 0x01;
+        assert!(middleware.protect.parse_cookie(&cookie).is_err());
+        cookie[16] = cookie[16] ^ 0x01; // flip the bit back
+
+        // flip a bit in the tag
         let len = cookie.len();
         cookie[len - 1] = cookie[len - 1] ^ 0x01;
         assert!(middleware.protect.parse_cookie(&cookie).is_err());
+    }
 
-        // check the token is invalid with ttl = 0 for tokens that are never valid
+    #[test]
+    fn middleware_fails_expired_tokens() {
+        let middleware = get_middleware();
+
         let (token, cookie) = middleware.protect.generate_token_pair(None, 0).unwrap();
+
         let token = token.b64_string().from_base64().expect("token not base64");
         let token = middleware.protect.parse_token(&token).expect("token not parsed");
+
         let cookie = cookie.b64_string().from_base64().expect("cookie not base64");
         let cookie = middleware.protect.parse_cookie(&cookie).expect("cookie not parsed");
-        assert!(!middleware.protect.verify_token_pair(&token, &cookie));
 
-        // check tokens don't validate each other
+        assert!(!middleware.protect.verify_token_pair(&token, &cookie));
+    }
+
+    #[test]
+    fn middleware_fails_mismatched_tokens() {
+        let middleware = get_middleware();
+
         let (token, _) = middleware.protect.generate_token_pair(None, 300).unwrap();
         let (_, cookie) = middleware.protect.generate_token_pair(None, 300).unwrap();
+
         let token = token.b64_string().from_base64().expect("token not base64");
         let token = middleware.protect.parse_token(&token).expect("token not parsed");
+
         let cookie = cookie.b64_string().from_base64().expect("cookie not base64");
         let cookie = middleware.protect.parse_cookie(&cookie).expect("cookie not parsed");
-        assert!(!middleware.protect.verify_token_pair(&token, &cookie));
 
-        // TODO set ttl = 1, sleep 2, check validation fails
-        // TODO check token is same when passed old token
+        assert!(!middleware.protect.verify_token_pair(&token, &cookie));
     }
+
+    // TODO set ttl = 1, sleep 2, check validation fails
+    // TODO check token is same when passed old token
 
     fn mock_handler(request: &mut Request) -> IronResult<Response> {
         // TODO check that CSRF token isn't in header/form/query
@@ -708,9 +816,8 @@ mod tests {
         Ok(Response::with((status::Ok, token)))
     }
 
-    fn test_middleware(protect: CsrfProtection) {
-        let config = CsrfConfig::default();
-        let middleware = CsrfProtectionMiddleware::new(protect, config);
+    fn get_handler_token_cookie() -> (Box<Handler>, CsrfToken, String) {
+        let middleware = get_middleware();
         let handler = middleware.around(Box::new(mock_handler));
 
         // do one GET to get the token
@@ -722,27 +829,15 @@ mod tests {
             let set_cookie = headers.get::<SetCookie>().unwrap();
             let cookie = Cookie::parse(set_cookie.0[0].clone()).unwrap();
             (CsrfToken::new(extract_body_to_string(response).from_base64().unwrap()),
-            format!("{}", cookie))
+             format!("{}", cookie))
         };
 
-        let body_methods = vec![method::Post,
-                                method::Put,
-                                method::Patch,
-                                method::Connect,
-                                Extension("WAT".to_string())];
+        (handler, csrf_token, csrf_cookie)
+    }
 
-        let all_methods = vec![method::Get,
-                               method::Post,
-                               method::Put,
-                               method::Patch,
-                               method::Delete,
-                               method::Options,
-                               method::Connect,
-                               method::Trace,
-                               Extension("WAT".to_string())];
-
-        ///////////////////////////////////////////////////////////////////////////////////
-
+    #[test]
+    fn methods_without_token() {
+        let (handler, _, csrf_cookie) = get_handler_token_cookie();
         let path = "http://localhost/";
         let mut headers = Headers::new();
         headers.set(IronCookie(vec![csrf_cookie.clone()]));
@@ -784,8 +879,11 @@ mod tests {
 
         let response = mock_request::patch(path, headers.clone(), body, &handler).unwrap();
         assert_eq!(response.status, Some(status::Forbidden));
+    }
 
-        ///////////////////////////////////////////////////////////////////////////////////
+    #[test]
+    fn methods_with_csrf_header() {
+        let (handler, csrf_token, csrf_cookie) = get_handler_token_cookie();
 
         let path = "http://localhost/";
         let mut headers = Headers::new();
@@ -793,14 +891,16 @@ mod tests {
         headers.set(XCsrfToken(csrf_token.b64_string()));
         let body = "";
 
-        for verb in all_methods.iter().cloned() {
+        for verb in ALL_METHODS.iter().cloned() {
             let response = mock_request::request(verb, path, body, headers.clone(), &handler)
                 .unwrap();
             assert_eq!(response.status, Some(status::Ok));
         }
+    }
 
-        ///////////////////////////////////////////////////////////////////////////////////
-
+    #[test]
+    fn methods_with_csrf_url() {
+        let (handler, csrf_token, csrf_cookie) = get_handler_token_cookie();
         let path = format!("http://localhost/?{}={}",
                            CSRF_QUERY_STRING,
                            csrf_token.b64_url_string());
@@ -809,14 +909,16 @@ mod tests {
         headers.set(IronCookie(vec![csrf_cookie.clone()]));
         let body = "";
 
-        for verb in all_methods.iter().cloned() {
+        for verb in ALL_METHODS.iter().cloned() {
             let response = mock_request::request(verb, path, body, headers.clone(), &handler)
                 .unwrap();
             assert_eq!(response.status, Some(status::Ok));
         }
+    }
 
-        ///////////////////////////////////////////////////////////////////////////////////
-
+    #[test]
+    fn methods_with_csrf_url_form() {
+        let (handler, csrf_token, csrf_cookie) = get_handler_token_cookie();
         let path = "http://localhost/";
         let mut headers = Headers::new();
         headers.set(IronCookie(vec![csrf_cookie.clone()]));
@@ -825,32 +927,16 @@ mod tests {
         let body = format!("{}={}", CSRF_QUERY_STRING, csrf_token.b64_url_string());
         let body = body.as_str();
 
-        for verb in body_methods.iter().cloned() {
+        for verb in BODY_METHODS.iter().cloned() {
             let response = mock_request::request(verb, path, body, headers.clone(), &handler)
                 .unwrap();
             assert_eq!(response.status, Some(status::Ok));
         }
     }
 
-    #[test]
-    fn test_csrf_protection() {
-        let password = b"hunter2";
-        let protect = CsrfProtection::from_password(password)
-            .expect("failed to make protection");
-        let middleware = CsrfProtectionMiddleware::new(protect, CsrfConfig::default());
-        test_encrypted_protection(middleware);
-    }
-
-    #[test]
-    fn test_csrf_middleware() {
-        let password = b"hunter2";
-        let protect = CsrfProtection::from_password(password)
-            .expect("failed to make protection");
-        test_middleware(protect);
-    }
-
     // TODO test form extraction
     // TODO test query extraction
     // TODO test headers extraction
     // TODO test that verifies protected_method feature/configuration
+
 }

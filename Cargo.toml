@@ -30,3 +30,4 @@ urlencoded = "^0.5"
 
 [dev-dependencies]
 iron-test = "^0.5"
+lazy_static = "^0.2"

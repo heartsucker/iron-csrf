@@ -12,7 +12,7 @@ use iron_csrf::{CsrfToken, CsrfProtectionMiddleware, CsrfConfig, CsrfProtection}
 fn main() {
     // initialize the CSRF protection
     let password = b"very-very-secret";
-    let protect = CsrfProtection::from_password(password).unwrap();
+    let protect = CsrfProtection::from_password(password);
     let config = CsrfConfig::default();
     let middleware = CsrfProtectionMiddleware::new(protect, config);
 
