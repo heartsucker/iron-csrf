@@ -992,7 +992,7 @@ mod tests {
         let set_cookie = response.headers.get::<SetCookie>().expect("SetCookie header not set");
 
         assert!(set_cookie.0.len() == 2);
-        assert!(set_cookie.0.iter().find(|c| c.contains(TEST_COOKIE_NAME) && c.contains(TEST_COOKIE_VALUE)).is_ok())
+        assert!(set_cookie.0.iter().find(|c| c.contains(TEST_COOKIE_NAME) && c.contains(TEST_COOKIE_VALUE)).is_some())
     }
 
     // TODO test that verifies protected_method feature/configuration
