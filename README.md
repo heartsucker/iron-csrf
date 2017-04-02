@@ -2,17 +2,11 @@
 
 CSRF protection for the Rust web framework Iron.
 
-`iron-csrf` uses Ed25519 DSA or HMAC to sign and verify timestamped CSRF cookies
-and their accompanying tokens.
+`iron-csrf` uses AES-GCM to sign and verify timestamped CSRF cookies and their
+accompanying tokens.
 
 There is an example `iron` server in the directory [./examples](./examples), and more
 information can be found in the docs hosted at [docs.rs](https://docs.rs/iron-csrf/).
-
-## Alpha Software
-
-This code is not at this time suitable for any production deployment. It has not been
-verified and the API is unstable. The current state is best described as "just barely
-functional." Use with extreme caution.
 
 ## Contributing
 

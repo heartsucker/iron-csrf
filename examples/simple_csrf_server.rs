@@ -1,3 +1,4 @@
+extern crate csrf;
 extern crate iron;
 extern crate iron_csrf;
 
@@ -7,12 +8,13 @@ use iron::method;
 use iron::prelude::*;
 use iron::status;
 
-use iron_csrf::{CsrfToken, CsrfProtectionMiddleware, CsrfConfig, CsrfProtection};
+use csrf::{CsrfToken, AesGcmCsrfProtection, CsrfProtection};
+use iron_csrf::{CsrfProtectionMiddleware, CsrfConfig};
 
 fn main() {
     // initialize the CSRF protection
     let password = b"very-very-secret";
-    let protect = CsrfProtection::from_password(password);
+    let protect = AesGcmCsrfProtection::from_password(password);
     let config = CsrfConfig::default();
     let middleware = CsrfProtectionMiddleware::new(protect, config);
 

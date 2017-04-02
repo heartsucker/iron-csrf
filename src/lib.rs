@@ -12,18 +12,20 @@
 //! how to wrap the middleware and access the string contents of the `CsrfToken`.
 //!
 //! ```
+//! extern crate csrf;
 //! extern crate iron;
 //! extern crate iron_csrf;
 //!
+//! use csrf::{CsrfToken, AesGcmCsrfProtection, CsrfProtection};
 //! use iron::AroundMiddleware;
 //! use iron::prelude::*;
 //! use iron::status;
-//! use iron_csrf::{CsrfProtectionMiddleware, CsrfToken, CsrfConfig, CsrfProtection};
+//! use iron_csrf::{CsrfProtectionMiddleware, CsrfConfig};
 //!
 //! fn main() {
 //!     // Set up CSRF protection with the default config
 //!     let password = b"correct horse battery staple";
-//!     let protect = CsrfProtection::from_password(password);
+//!     let protect = AesGcmCsrfProtection::from_password(password);
 //!     let config = CsrfConfig::default();
 //!     let middleware = CsrfProtectionMiddleware::new(protect, config);
 //!
@@ -70,7 +72,7 @@
 
 extern crate chrono;
 extern crate cookie;
-extern crate crypto;
+extern crate csrf;
 #[macro_use]
 extern crate hyper;
 extern crate iron;
@@ -81,9 +83,7 @@ extern crate iron_test;
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
-extern crate ring;
 extern crate rustc_serialize;
-extern crate time;
 extern crate urlencoded;
 
 mod core;
