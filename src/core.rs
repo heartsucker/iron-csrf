@@ -316,8 +316,8 @@ mod tests {
 
     #[test]
     fn cookies_and_tokens_can_be_verfied() {
-        let password = b"hunter2";
-        let protect = AesGcmCsrfProtection::from_password(password);
+        let key = b"01234567012345670123456701234567";
+        let protect = AesGcmCsrfProtection::from_key(*key);
         let (token, cookie) = protect.generate_token_pair(None, 300)
             .expect("couldn't generate token/cookie pair");
         let token = token.b64_string().from_base64().expect("token not base64");
@@ -341,8 +341,8 @@ mod tests {
     }
 
     fn get_middleware() -> CsrfProtectionMiddleware<AesGcmCsrfProtection> {
-        let password = b"hunter2";
-        let protect = CsrfProtection::from_password(password);
+        let key = b"01234567012345670123456701234567";
+        let protect = AesGcmCsrfProtection::from_key(*key);
         CsrfProtectionMiddleware::new(protect, CsrfConfig::default())
     }
 
