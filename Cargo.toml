@@ -12,7 +12,7 @@ keywords = [ "iron", "csrf", "web", "security" ]
 categories = [ "web-programming::http-server", "authentication", "cryptography" ]
 
 [badges]
-travis-ci = { repository = "https://github.com/heartsucker/iron-csrf", branch = "master" }
+travis-ci = { repository = "heartsucker/iron-csrf", branch = "master" }
 
 [lib]
 name = "iron_csrf"
