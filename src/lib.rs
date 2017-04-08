@@ -4,7 +4,9 @@
 //!
 //! `iron_csrf` is used as `iron::AroundMiddleware` that checks all requests with the HTTP method
 //! POST, PUT, PATCH, and DELETE for the presence of a CSRF token, and it generates tokens that can
-//! be  used inside the application for use when generating the `Response`.
+//! be  used inside the application for use when generating the `Response`. A more complete
+//! reference implementation can be found on
+//! [github](https://github.com/heartsucker/iron-reference).
 //!
 //! ## Hello, CSRF.
 //!

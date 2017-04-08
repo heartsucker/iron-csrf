@@ -43,7 +43,7 @@ pub struct CsrfConfig {
 }
 
 impl CsrfConfig {
-    /// Create a new builder that is initializd with the default configuration.
+    /// Create a new builder that is initialized with the default configuration.
     pub fn build() -> CsrfConfigBuilder {
         CsrfConfigBuilder { config: CsrfConfig::default() }
     }

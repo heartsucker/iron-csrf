@@ -7,6 +7,8 @@ accompanying tokens.
 
 There is an example `iron` server in the directory [./examples](./examples), and more
 information can be found in the docs hosted at [docs.rs](https://docs.rs/iron-csrf/).
+a complete reference implementation can be found on
+[github](https://github.com/heartsucker/iron-reference).
 
 ## Contributing
 
