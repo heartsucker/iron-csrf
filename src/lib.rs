@@ -72,6 +72,8 @@
 //! add protection for requests with `Content-Type: multipart/form-data`, you should include the
 //! CSRF token in the query string.
 
+#![deny(missing_docs)]
+
 extern crate chrono;
 extern crate cookie;
 extern crate csrf;
