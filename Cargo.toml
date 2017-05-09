@@ -20,12 +20,12 @@ path = "./src/lib.rs"
 
 [dependencies]
 chrono = "0.3"
-cookie = { version = "0.6", features = [ "percent-encode" ] }
+cookie = { version = "0.8", features = [ "percent-encode" ] }
 csrf = { version = "0.1", features = [ "iron" ] }
 hyper = "0.10"
 iron = "0.5"
 log = "0.3"
-ring = "0.7"
+ring = "0.9.4"
 rust-crypto = "0.2"
 rustc-serialize = "0.3"
 urlencoded = "0.5"
