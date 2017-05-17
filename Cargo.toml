@@ -1,6 +1,6 @@
 [package]
 name = "iron-csrf"
-version = "0.1.0"
+version = "0.2.0"
 authors = [ "heartsucker <heartsucker@autistici.org>" ]
 description = "CSRF protection for the web framework Iron"
 homepage = "https://github.com/heartsucker/iron-csrf"
@@ -25,7 +25,7 @@ csrf = { version = "0.1", features = [ "iron" ] }
 hyper = "0.10"
 iron = "0.5"
 log = "0.3"
-ring = "0.9.4"
+ring = "0.9.5"
 rust-crypto = "0.2"
 rustc-serialize = "0.3"
 urlencoded = "0.5"
