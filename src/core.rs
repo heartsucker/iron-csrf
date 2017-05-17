@@ -23,16 +23,18 @@ fn iron_error(err: CsrfError) -> IronError {
     }
 }
 
+/// Error type for configuration related errors.
 pub enum CsrfConfigError {
-    // TODO add more of these
+    /// The TTL was not valid.
     InvalidTtl,
+    /// CSRF protection was not enabled for any HTTP methods.
     NoProtectedMethods,
-    Unspecified,
 }
 
-// TODO why doesn't this show up in the docs?
-/// The HTTP header for the CSRF token.
-header! { (XCsrfToken, CSRF_HEADER) => [String] }
+header! {
+    /// The HTTP header for the CSRF token.
+    (XCsrfToken, CSRF_HEADER) => [String]
+}
 
 /// The configuation used to initialize `CsrfProtectionMiddleware`.
 pub struct CsrfConfig {
@@ -43,7 +45,7 @@ pub struct CsrfConfig {
 }
 
 impl CsrfConfig {
-    /// Create a new builder that is initializd with the default configuration.
+    /// Create a new builder that is initialized with the default configuration.
     pub fn build() -> CsrfConfigBuilder {
         CsrfConfigBuilder { config: CsrfConfig::default() }
     }
@@ -264,6 +266,8 @@ pub struct CsrfProtectionMiddleware<P: CsrfProtection> {
 }
 
 impl<P: CsrfProtection> CsrfProtectionMiddleware<P> {
+    /// Create a new instance of `CsrfProtectionMiddleware` from a `CsrfProtection` and
+    /// `CsrfConfig`.
     pub fn new(protect: P, config: CsrfConfig) -> Self {
         CsrfProtectionMiddleware {
             protect: protect,

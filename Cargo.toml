@@ -1,6 +1,6 @@
 [package]
 name = "iron-csrf"
-version = "0.1.0"
+version = "0.2.0"
 authors = [ "heartsucker <heartsucker@autistici.org>" ]
 description = "CSRF protection for the web framework Iron"
 homepage = "https://github.com/heartsucker/iron-csrf"
@@ -9,10 +9,10 @@ documentation = "https://docs.rs/iron-csrf"
 readme = "README.md"
 license = "MIT"
 keywords = [ "iron", "csrf", "web", "security" ]
-categories = [ "web-programming::http-server", "authentication", "cryptography" ]
+categories = [ "web-programming", "authentication", "cryptography" ]
 
 [badges]
-travis-ci = { repository = "https://github.com/heartsucker/iron-csrf", branch = "master" }
+travis-ci = { repository = "heartsucker/iron-csrf", branch = "master" }
 
 [lib]
 name = "iron_csrf"
@@ -20,12 +20,12 @@ path = "./src/lib.rs"
 
 [dependencies]
 chrono = "0.3"
-cookie = { version = "0.6", features = [ "percent-encode" ] }
+cookie = { version = "0.8", features = [ "percent-encode" ] }
 csrf = { version = "0.1", features = [ "iron" ] }
 hyper = "0.10"
 iron = "0.5"
 log = "0.3"
-ring = "0.7"
+ring = "0.9.5"
 rust-crypto = "0.2"
 rustc-serialize = "0.3"
 urlencoded = "0.5"
