@@ -227,8 +227,18 @@ impl<P: CsrfProtection + 'static, H: Handler> Handler for CsrfHandler<P, H> {
         }
 
         let (token, csrf_cookie) = self.protect
-            .generate_token_pair(token_opt.map(|t| t.token().to_vec()),
-                                 self.config.ttl_seconds)
+            .generate_token_pair(token_opt.and_then(|t| {
+                let t = t.token();
+                if t.len() < 64 {
+                    None
+                } else {
+                    let mut buf = [0; 64];
+                    for i in 0..64 {
+                        buf[i] = t[i];
+                    }
+                    Some(buf)
+                }
+            }).as_ref(), self.config.ttl_seconds)
             .map_err(iron_error)?;
         let _ = request.extensions.insert::<CsrfToken>(token);
 
