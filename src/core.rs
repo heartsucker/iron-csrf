@@ -7,12 +7,12 @@ use chrono::Duration;
 use cookie::Cookie;
 use csrf::{CSRF_COOKIE_NAME, CSRF_FORM_FIELD, CSRF_HEADER, CSRF_QUERY_STRING, CsrfToken,
            CsrfProtection, CsrfError};
+use data_encoding::{BASE64, BASE64URL};
 use iron::headers::{SetCookie, Cookie as IronCookie};
 use iron::method;
 use iron::middleware::{AroundMiddleware, Handler};
 use iron::prelude::*;
 use iron::status;
-use rustc_serialize::base64::FromBase64;
 use urlencoded::{UrlEncodedQuery, UrlEncodedBody};
 
 
@@ -140,7 +140,7 @@ impl<P: CsrfProtection, H: Handler> CsrfHandler<P, H> {
                                 (CSRF_COOKIE_NAME, value) => Some(value.to_string()),
                                 _ => None,
                             })
-                            .and_then(|c| c.from_base64().ok())
+                            .and_then(|c| BASE64.decode(c.as_bytes()).ok())
                     })
                     .collect::<Vec<Vec<u8>>>()
                     .first()
@@ -164,38 +164,38 @@ impl<P: CsrfProtection, H: Handler> CsrfHandler<P, H> {
 
     // TODO have this return an &str
     fn extract_csrf_token_from_form_url_encoded(&self,
-                                                mut request: &mut Request)
+                                                request: &mut Request)
                                                 -> Option<Vec<u8>> {
         request.get_ref::<UrlEncodedBody>()
             .ok()
             .and_then(|form| form.get(CSRF_FORM_FIELD))
             .and_then(|vs| {
                 vs.iter()
-                    .filter_map(|v| v.from_base64().ok())
+                    .filter_map(|v| BASE64URL.decode(v.as_bytes()).ok())
                     .next()
             })
             .map(|t| t.clone())
     }
 
     // TODO have this return an &str
-    fn extract_csrf_token_from_query(&self, mut request: &mut Request) -> Option<Vec<u8>> {
+    fn extract_csrf_token_from_query(&self, request: &mut Request) -> Option<Vec<u8>> {
         request.get_ref::<UrlEncodedQuery>()
             .ok()
             .and_then(|query| query.get(CSRF_QUERY_STRING))
             .and_then(|vs| {
                 vs.iter()
-                    .filter_map(|v| v.from_base64().ok())
+                    .filter_map(|v| BASE64URL.decode(v.as_bytes()).ok())
                     .next()
             })
             .map(|t| t.clone())
     }
 
     // TODO have this return an &str
-    fn extract_csrf_token_from_headers(&self, mut request: &mut Request) -> Option<Vec<u8>> {
+    fn extract_csrf_token_from_headers(&self, request: &mut Request) -> Option<Vec<u8>> {
         let token = request.headers
             .get::<XCsrfToken>()
             .map(|t| t.to_string())
-            .and_then(|s| s.from_base64().ok());
+            .and_then(|s| BASE64.decode(s.as_bytes()).ok());
         let _ = request.headers.remove::<XCsrfToken>();
         token
     }
@@ -334,9 +334,9 @@ mod tests {
         let protect = AesGcmCsrfProtection::from_password(password);
         let (token, cookie) = protect.generate_token_pair(None, 300)
             .expect("couldn't generate token/cookie pair");
-        let token = token.b64_string().from_base64().expect("token not base64");
+        let token = BASE64.decode(token.b64_string().as_bytes()).expect("token not base64");
         let token = protect.parse_token(&token).expect("token not parsed");
-        let cookie = cookie.b64_string().from_base64().expect("cookie not base64");
+        let cookie = BASE64.decode(cookie.b64_string().as_bytes()).expect("cookie not base64");
         let cookie = protect.parse_cookie(&cookie).expect("cookie not parsed");
         assert!(protect.verify_token_pair(&token, &cookie),
                 "could not verify token/cookie pair");
@@ -365,9 +365,9 @@ mod tests {
         let middleware = get_middleware();
 
         let (token, cookie) = middleware.protect.generate_token_pair(None, 300).unwrap();
-        let token = token.b64_string().from_base64().expect("token not base64");
+        let token = BASE64.decode(token.b64_string().as_bytes()).expect("token not base64");
         let token = middleware.protect.parse_token(&token).expect("token not parsed");
-        let cookie = cookie.b64_string().from_base64().expect("cookie not base64");
+        let cookie = BASE64.decode(cookie.b64_string().as_bytes()).expect("cookie not base64");
         let cookie = middleware.protect.parse_cookie(&cookie).expect("cookie not parsed");
 
         assert!(middleware.protect.verify_token_pair(&token, &cookie));
@@ -378,7 +378,7 @@ mod tests {
         let middleware = get_middleware();
 
         let (token, _) = middleware.protect.generate_token_pair(None, 300).unwrap();
-        let mut token = token.b64_string().from_base64().expect("token not base64");
+        let mut token = BASE64.decode(token.b64_string().as_bytes()).expect("token not base64");
 
         // flip a bit in the padding
         token[0] = token[0] ^ 0x01;
@@ -401,7 +401,7 @@ mod tests {
         let middleware = get_middleware();
 
         let (_, cookie) = middleware.protect.generate_token_pair(None, 300).unwrap();
-        let mut cookie = cookie.b64_string().from_base64().expect("cookie not base64");
+        let mut cookie = BASE64.decode(cookie.b64_string().as_bytes()).expect("cookie not base64");
 
         // flip a bit in the padding
         cookie[0] = cookie[0] ^ 0x01;
@@ -425,10 +425,10 @@ mod tests {
 
         let (token, cookie) = middleware.protect.generate_token_pair(None, 0).unwrap();
 
-        let token = token.b64_string().from_base64().expect("token not base64");
+        let token = BASE64.decode(token.b64_string().as_bytes()).expect("token not base64");
         let token = middleware.protect.parse_token(&token).expect("token not parsed");
 
-        let cookie = cookie.b64_string().from_base64().expect("cookie not base64");
+        let cookie = BASE64.decode(cookie.b64_string().as_bytes()).expect("cookie not base64");
         let cookie = middleware.protect.parse_cookie(&cookie).expect("cookie not parsed");
 
         assert!(!middleware.protect.verify_token_pair(&token, &cookie));
@@ -441,10 +441,10 @@ mod tests {
         let (token, _) = middleware.protect.generate_token_pair(None, 300).unwrap();
         let (_, cookie) = middleware.protect.generate_token_pair(None, 300).unwrap();
 
-        let token = token.b64_string().from_base64().expect("token not base64");
+        let token = BASE64.decode(token.b64_string().as_bytes()).expect("token not base64");
         let token = middleware.protect.parse_token(&token).expect("token not parsed");
 
-        let cookie = cookie.b64_string().from_base64().expect("cookie not base64");
+        let cookie = BASE64.decode(cookie.b64_string().as_bytes()).expect("cookie not base64");
         let cookie = middleware.protect.parse_cookie(&cookie).expect("cookie not parsed");
 
         assert!(!middleware.protect.verify_token_pair(&token, &cookie));
@@ -526,7 +526,7 @@ mod tests {
             let headers = response.headers.clone();
             let set_cookie = headers.get::<SetCookie>().unwrap();
             let cookie = Cookie::parse(set_cookie.0[0].clone()).unwrap();
-            (CsrfToken::new(extract_body_to_string(response).from_base64().unwrap()),
+            (CsrfToken::new(BASE64.decode(extract_body_to_string(response).as_bytes()).unwrap()),
              format!("{}", cookie))
         };
 

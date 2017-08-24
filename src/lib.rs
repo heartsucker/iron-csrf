@@ -76,7 +76,8 @@
 
 extern crate chrono;
 extern crate cookie;
-extern crate csrf;
+extern crate csrf as _csrf;
+extern crate data_encoding;
 #[macro_use]
 extern crate hyper;
 extern crate iron;
@@ -87,8 +88,12 @@ extern crate iron_test;
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
-extern crate rustc_serialize;
 extern crate urlencoded;
 
 mod core;
 pub use core::*;
+
+/// Re-exports the `csrf` crate.
+pub mod csrf {
+    pub use _csrf::*;
+}
