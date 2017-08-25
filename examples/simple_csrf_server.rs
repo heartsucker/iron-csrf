@@ -1,4 +1,5 @@
 extern crate csrf;
+extern crate env_logger;
 extern crate iron;
 extern crate iron_csrf;
 
@@ -12,6 +13,7 @@ use csrf::{CsrfToken, AesGcmCsrfProtection, CsrfProtection};
 use iron_csrf::{CsrfProtectionMiddleware, CsrfConfig};
 
 fn main() {
+    env_logger::init().unwrap();
     // initialize the CSRF protection
     let password = b"very-very-secret";
     let protect = AesGcmCsrfProtection::from_password(password);

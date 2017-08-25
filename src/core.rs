@@ -210,11 +210,11 @@ impl<P: CsrfProtection + 'static, H: Handler> Handler for CsrfHandler<P, H> {
             .and_then(|c| self.protect.parse_cookie(&c).ok());
 
         if self.config.protected_methods.contains(&request.method) {
-            debug!("csrf elements present. token: {}, cookie: {}",
+            debug!("CSRF elements present. token: {}, cookie: {}",
                    token_opt.is_some(),
                    cookie_opt.is_some());
 
-            match (token_opt.clone(), cookie_opt) {
+            match (token_opt.as_ref(), cookie_opt.as_ref()) {
                 (Some(token), Some(cookie)) => {
                     let verified = self.protect.verify_token_pair(&token, &cookie);
                     if !verified {
@@ -227,15 +227,13 @@ impl<P: CsrfProtection + 'static, H: Handler> Handler for CsrfHandler<P, H> {
         }
 
         let (token, csrf_cookie) = self.protect
-            .generate_token_pair(token_opt.and_then(|t| {
-                let t = t.token();
-                if t.len() < 64 {
+            .generate_token_pair(cookie_opt.and_then(|c| {
+                let c = c.value();
+                if c.len() < 64 {
                     None
                 } else {
                     let mut buf = [0; 64];
-                    for i in 0..64 {
-                        buf[i] = t[i];
-                    }
+                    buf.copy_from_slice(&c);
                     Some(buf)
                 }
             }).as_ref(), self.config.ttl_seconds)
