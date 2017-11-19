@@ -36,8 +36,8 @@ fn index(request: &mut Request) -> IronResult<Response> {
 
             // in the real world, one would use something like handlebars
             // instead of this hackiness
-            let html = include_str!("./get.html")
-                .replace("CSRF_TOKEN", token.b64_string().as_str());
+            let html =
+                include_str!("./get.html").replace("CSRF_TOKEN", token.b64_string().as_str());
 
             Response::with((status::Ok, html))
         }
