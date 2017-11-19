@@ -293,7 +293,7 @@ impl<P: CsrfProtection + 'static> AroundMiddleware for CsrfProtectionMiddleware<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use csrf::AesGcmCsrfProtection;
+    use csrf::{AesGcmCsrfProtection, ChaCha20Poly1305CsrfProtection, MultiCsrfProtection};
     use hyper::header::Headers;
     use hyper::method::Method::Extension;
     use iron_test::request as mock_request;
@@ -324,12 +324,13 @@ mod tests {
     const TEST_COOKIE_NAME: &'static str = "some-cookie";
     const TEST_COOKIE_VALUE: &'static str = "some-value";
 
+    const KEY_32: [u8; 32] = *b"01234567012345670123456701234567";
+
     // TODO write test that ensures encrypted messages don't contain the plaintext
 
     #[test]
     fn cookies_and_tokens_can_be_verfied() {
-        let password = b"hunter2";
-        let protect = AesGcmCsrfProtection::from_password(password);
+        let protect = AesGcmCsrfProtection::from_key(KEY_32);
         let (token, cookie) = protect.generate_token_pair(None, 300)
             .expect("couldn't generate token/cookie pair");
         let token = BASE64.decode(token.b64_string().as_bytes()).expect("token not base64");
@@ -353,8 +354,7 @@ mod tests {
     }
 
     fn get_middleware() -> CsrfProtectionMiddleware<AesGcmCsrfProtection> {
-        let password = b"hunter2";
-        let protect = CsrfProtection::from_password(password);
+        let protect = AesGcmCsrfProtection::from_key(KEY_32);
         CsrfProtectionMiddleware::new(protect, CsrfConfig::default())
     }
 
@@ -520,15 +520,17 @@ mod tests {
         let response = mock_request::get("http://localhost/", Headers::new(), &handler).unwrap();
         assert_eq!(response.status, Some(status::Ok));
 
-        let (csrf_token, csrf_cookie) = {
-            let headers = response.headers.clone();
-            let set_cookie = headers.get::<SetCookie>().unwrap();
-            let cookie = Cookie::parse(set_cookie.0[0].clone()).unwrap();
-            (CsrfToken::new(BASE64.decode(extract_body_to_string(response).as_bytes()).unwrap()),
-             format!("{}", cookie))
-        };
+        let (csrf_token, csrf_cookie) = extract_token_cookie(response);
 
         (handler, csrf_token, csrf_cookie)
+    }
+
+    fn extract_token_cookie(resp: Response) -> (CsrfToken, String) {
+        let headers = resp.headers.clone();
+        let set_cookie = headers.get::<SetCookie>().unwrap();
+        let cookie = Cookie::parse(set_cookie.0[0].clone()).unwrap();
+        (CsrfToken::new(BASE64.decode(extract_body_to_string(resp).as_bytes()).unwrap()),
+         format!("{}", cookie))
     }
 
     #[test]
@@ -649,6 +651,60 @@ mod tests {
             .iter()
             .find(|c| c.contains(TEST_COOKIE_NAME) && c.contains(TEST_COOKIE_VALUE))
             .is_some())
+    }
+
+    #[test]
+    fn multiprotect_and_rotation() {
+        let protect_1 = AesGcmCsrfProtection::from_key(KEY_32);
+        let protect_1_clone = AesGcmCsrfProtection::from_key(KEY_32);
+        let middle_1 = CsrfProtectionMiddleware::new(protect_1, CsrfConfig::default());
+        let handler_1 = middle_1.around(Box::new(mock_handler));
+
+        let protect_2 = ChaCha20Poly1305CsrfProtection::from_key(KEY_32);
+        let protect_2_clone = ChaCha20Poly1305CsrfProtection::from_key(KEY_32);
+        let middle_2 = CsrfProtectionMiddleware::new(protect_2, CsrfConfig::default());
+        let handler_2 = middle_2.around(Box::new(mock_handler));
+
+        let multi_protect = MultiCsrfProtection::new(Box::new(protect_2_clone), vec![Box::new(protect_1_clone)]);
+        let multi_middle = CsrfProtectionMiddleware::new(multi_protect, CsrfConfig::default());
+        let multi_handler = multi_middle.around(Box::new(mock_handler));
+        
+        // make one request to the first CSRF protected handler
+        let resp = mock_request::get("http://localhost/", Headers::new(), &handler_1).unwrap();
+        let (token, cookie) = extract_token_cookie(resp);
+
+        // test that the cookie is valid
+        let path = format!("http://localhost/?{}={}&{}={}",
+                           CSRF_QUERY_STRING,
+                           token.b64_url_string(),
+                           TEST_QUERY_PARAM,
+                           TEST_QUERY_VALUE);
+        let path = path.as_str();
+        let mut headers = Headers::new();
+        headers.set(IronCookie(vec![cookie]));
+        let body = "";
+        let resp = mock_request::request(method::Post, path, body, headers.clone(), &handler_1).unwrap();
+        assert_eq!(resp.status, Some(status::Ok));
+
+        // test the cookie/token against the multi handler
+        let resp = mock_request::request(method::Post, path, body, headers.clone(), &multi_handler).unwrap();
+        assert_eq!(resp.status, Some(status::Ok));
+
+        // extract the new cookie/token from the response
+        let (token, cookie) = extract_token_cookie(resp);
+
+        // test the rotated cookie/token against the new handler
+        let path = format!("http://localhost/?{}={}&{}={}",
+                           CSRF_QUERY_STRING,
+                           token.b64_url_string(),
+                           TEST_QUERY_PARAM,
+                           TEST_QUERY_VALUE);
+        let path = path.as_str();
+        let mut headers = Headers::new();
+        headers.set(IronCookie(vec![cookie]));
+        let body = "";
+        let resp = mock_request::request(method::Post, path, body, headers.clone(), &handler_2).unwrap();
+        assert_eq!(resp.status, Some(status::Ok));
     }
 
     // TODO test that verifies protected_method feature/configuration

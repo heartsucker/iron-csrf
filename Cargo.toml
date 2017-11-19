@@ -22,12 +22,11 @@ path = "./src/lib.rs"
 [dependencies]
 chrono = "0.3"
 cookie = { version = "0.8", features = [ "percent-encode" ] }
-csrf = { version = "0.2.2", features = [ "iron" ] }
-data-encoding = "2.0.0-rc.1"
+csrf = { version = "0.3", features = [ "iron" ] }
+data-encoding = "2.0.0"
 hyper = "0.10"
 iron = "0.5"
 log = "0.3"
-ring = "0.11"
 rust-crypto = "0.2"
 urlencoded = "0.5"
 

@@ -9,14 +9,14 @@ use iron::method;
 use iron::prelude::*;
 use iron::status;
 
-use csrf::{CsrfToken, AesGcmCsrfProtection, CsrfProtection};
+use csrf::{CsrfToken, AesGcmCsrfProtection};
 use iron_csrf::{CsrfProtectionMiddleware, CsrfConfig};
 
 fn main() {
     env_logger::init().unwrap();
     // initialize the CSRF protection
-    let password = b"very-very-secret";
-    let protect = AesGcmCsrfProtection::from_password(password);
+    let key = *b"01234567012345670123456701234567";
+    let protect = AesGcmCsrfProtection::from_key(key);
     let config = CsrfConfig::default();
     let middleware = CsrfProtectionMiddleware::new(protect, config);
 

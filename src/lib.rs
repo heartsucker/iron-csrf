@@ -18,7 +18,7 @@
 //! extern crate iron;
 //! extern crate iron_csrf;
 //!
-//! use csrf::{CsrfToken, AesGcmCsrfProtection, CsrfProtection};
+//! use csrf::{CsrfToken, AesGcmCsrfProtection};
 //! use iron::AroundMiddleware;
 //! use iron::prelude::*;
 //! use iron::status;
@@ -26,8 +26,8 @@
 //!
 //! fn main() {
 //!     // Set up CSRF protection with the default config
-//!     let password = b"correct horse battery staple";
-//!     let protect = AesGcmCsrfProtection::from_password(password);
+//!     let key = *b"01234567012345670123456701234567";
+//!     let protect = AesGcmCsrfProtection::from_key(key);
 //!     let config = CsrfConfig::default();
 //!     let middleware = CsrfProtectionMiddleware::new(protect, config);
 //!
@@ -78,6 +78,8 @@ extern crate chrono;
 extern crate cookie;
 extern crate csrf as _csrf;
 extern crate data_encoding;
+#[cfg(test)]
+extern crate env_logger;
 #[macro_use]
 extern crate hyper;
 extern crate iron;
