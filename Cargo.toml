@@ -1,6 +1,6 @@
 [package]
 name = "iron-csrf"
-version = "0.2.4"
+version = "0.3.0"
 authors = [ "heartsucker <heartsucker@autistici.org>" ]
 description = "CSRF protection for the web framework Iron"
 homepage = "https://github.com/heartsucker/iron-csrf"
