@@ -2,24 +2,75 @@
 
 use std::collections::HashSet;
 use std::str;
+use std::fmt::{self, Display, Debug};
 
-use chrono::Duration;
 use cookie::Cookie;
-use csrf::{CSRF_COOKIE_NAME, CSRF_FORM_FIELD, CSRF_HEADER, CSRF_QUERY_STRING, CsrfToken,
-           CsrfProtection, CsrfError};
+use csrf::{CsrfToken, CsrfProtection, CsrfError};
 use data_encoding::{BASE64, BASE64URL};
-use iron::headers::{SetCookie, Cookie as IronCookie};
+use iron::error::HttpError;
+use iron::headers::{Header, SetCookie, Cookie as IronCookie, HeaderFormat};
 use iron::method;
 use iron::middleware::{AroundMiddleware, Handler};
 use iron::prelude::*;
 use iron::status;
+use time::Duration;
 use urlencoded::{UrlEncodedQuery, UrlEncodedBody};
 
+/// The name of the cookie for the CSRF validation data and signature.
+pub const CSRF_COOKIE_NAME: &'static str = "csrf";
+
+/// The name of the form field for the CSRF token.
+pub const CSRF_FORM_FIELD: &'static str = "csrf-token";
+
+/// The name of the HTTP header for the CSRF token.
+pub const CSRF_HEADER: &'static str = "X-CSRF-Token";
+
+/// The name of the query parameter for the CSRF token.
+pub const CSRF_QUERY_STRING: &'static str = "csrf-token";
 
 fn iron_error(err: CsrfError) -> IronError {
     IronError {
         response: Response::with((status::Forbidden, format!("{}", err))),
         error: Box::new(err),
+    }
+}
+
+#[derive(Clone, PartialEq)]
+struct XCsrfToken(CsrfToken);
+
+impl Header for XCsrfToken {
+    fn header_name() -> &'static str {
+        CSRF_HEADER
+    }
+
+    fn parse_header(raw: &[Vec<u8>]) -> Result<Self, HttpError> {
+        if raw.len() != 1 {
+            // if there is more than one header, something is wrong. bail.
+            return Err(HttpError::Header);
+        }
+
+        match BASE64.decode(&raw[0]) {
+            Ok(v) => Ok(Self(CsrfToken::new(v))),
+            Err(_) => Err(HttpError::Header),
+        }
+    }
+}
+
+impl HeaderFormat for XCsrfToken {
+    fn fmt_header(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        Display::fmt(&self, f)
+    }
+}
+
+impl Display for XCsrfToken {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0.b64_string())
+    }
+}
+
+impl Debug for XCsrfToken {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Display::fmt(&self, f)
     }
 }
 
@@ -29,11 +80,6 @@ pub enum CsrfConfigError {
     InvalidTtl,
     /// CSRF protection was not enabled for any HTTP methods.
     NoProtectedMethods,
-}
-
-header! {
-    /// The HTTP header for the CSRF token.
-    (XCsrfToken, CSRF_HEADER) => [String]
 }
 
 /// The configuation used to initialize `CsrfProtectionMiddleware`.
@@ -296,7 +342,7 @@ impl<P: CsrfProtection> CsrfProtectionMiddleware<P> {
 }
 
 impl<P: CsrfProtection + 'static> AroundMiddleware for CsrfProtectionMiddleware<P> {
-    fn around(self, handler: Box<Handler>) -> Box<Handler> {
+    fn around(self, handler: Box<dyn Handler>) -> Box<dyn Handler> {
         Box::new(CsrfHandler::new(self.protect, self.config, handler))
     }
 }
@@ -305,8 +351,7 @@ impl<P: CsrfProtection + 'static> AroundMiddleware for CsrfProtectionMiddleware<
 mod tests {
     use super::*;
     use csrf::{AesGcmCsrfProtection, ChaCha20Poly1305CsrfProtection, MultiCsrfProtection};
-    use hyper::header::Headers;
-    use hyper::method::Method::Extension;
+    use iron::headers::Headers;
     use iron_test::request as mock_request;
     use iron_test::response::extract_body_to_string;
 
@@ -315,7 +360,7 @@ mod tests {
                                                         method::Put,
                                                         method::Patch,
                                                         method::Connect,
-                                                        Extension("WAT".to_string())];
+                                                        method::Extension("WAT".to_string())];
     }
 
     lazy_static! {
@@ -327,7 +372,7 @@ mod tests {
                                                        method::Options,
                                                        method::Connect,
                                                        method::Trace,
-                                                       Extension("WAT".to_string())];
+                                                       method::Extension("WAT".to_string())];
     }
 
     const TEST_QUERY_PARAM: &'static str = "test-param";
@@ -575,7 +620,7 @@ mod tests {
         Ok(response)
     }
 
-    fn get_handler_token_cookie<H: Handler>(handler: H) -> (Box<Handler>, CsrfToken, String) {
+    fn get_handler_token_cookie<H: Handler>(handler: H) -> (Box<dyn Handler>, CsrfToken, String) {
         let middleware = get_middleware();
         let handler = middleware.around(Box::new(handler));
 
@@ -628,7 +673,7 @@ mod tests {
         assert_eq!(response.status, Some(status::Ok));
 
         let response = mock_request::request(
-            Extension("WAT".to_string()),
+            method::Extension("WAT".to_string()),
             path,
             body,
             headers.clone(),
@@ -656,7 +701,7 @@ mod tests {
         let path = "http://localhost/";
         let mut headers = Headers::new();
         headers.set(IronCookie(vec![csrf_cookie.clone()]));
-        headers.set(XCsrfToken(csrf_token.b64_string()));
+        headers.set(XCsrfToken(csrf_token));
         let body = "";
 
         for verb in ALL_METHODS.iter().cloned() {
@@ -799,5 +844,4 @@ mod tests {
     }
 
     // TODO test that verifies protected_method feature/configuration
-
 }

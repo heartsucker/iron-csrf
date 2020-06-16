@@ -74,28 +74,16 @@
 
 #![deny(missing_docs)]
 
-extern crate chrono;
-extern crate cookie;
-extern crate csrf as _csrf;
-extern crate data_encoding;
-#[cfg(test)]
-extern crate env_logger;
-#[macro_use]
-extern crate hyper;
-extern crate iron;
-#[cfg(test)]
-extern crate iron_test;
 #[cfg(test)]
 #[macro_use]
 extern crate lazy_static;
 #[macro_use]
 extern crate log;
-extern crate urlencoded;
 
 mod core;
-pub use core::*;
+pub use crate::core::*;
 
 /// Re-exports the `csrf` crate.
 pub mod csrf {
-    pub use _csrf::*;
+    pub use csrf::*;
 }

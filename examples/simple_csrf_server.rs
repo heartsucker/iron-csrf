@@ -1,8 +1,3 @@
-extern crate csrf;
-extern crate env_logger;
-extern crate iron;
-extern crate iron_csrf;
-
 use iron::AroundMiddleware;
 use iron::headers::ContentType;
 use iron::method;
@@ -12,8 +7,14 @@ use iron::status;
 use csrf::{CsrfToken, AesGcmCsrfProtection};
 use iron_csrf::{CsrfProtectionMiddleware, CsrfConfig};
 
+use simplelog::{CombinedLogger, LevelFilter, TermLogger, TerminalMode};
+
 fn main() {
-    env_logger::init().unwrap();
+    CombinedLogger::init(vec![
+        TermLogger::new(LevelFilter::Debug, simplelog::Config::default(), TerminalMode::Stdout),
+    ])
+    .unwrap();
+
     // initialize the CSRF protection
     let key = *b"01234567012345670123456701234567";
     let protect = AesGcmCsrfProtection::from_key(key);
@@ -37,7 +38,7 @@ fn index(request: &mut Request) -> IronResult<Response> {
             // in the real world, one would use something like handlebars
             // instead of this hackiness
             let html =
-                include_str!("./get.html").replace("CSRF_TOKEN", token.b64_string().as_str());
+                include_str!("./get.html").replace("CSRF_TOKEN", token.b64_url_string().as_str());
 
             Response::with((status::Ok, html))
         }
