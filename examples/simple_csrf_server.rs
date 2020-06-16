@@ -1,18 +1,20 @@
-use iron::AroundMiddleware;
 use iron::headers::ContentType;
 use iron::method;
 use iron::prelude::*;
 use iron::status;
+use iron::AroundMiddleware;
 
-use csrf::{CsrfToken, AesGcmCsrfProtection};
-use iron_csrf::{CsrfProtectionMiddleware, CsrfConfig};
+use csrf::{AesGcmCsrfProtection, CsrfToken};
+use iron_csrf::{CsrfConfig, CsrfProtectionMiddleware};
 
 use simplelog::{CombinedLogger, LevelFilter, TermLogger, TerminalMode};
 
 fn main() {
-    CombinedLogger::init(vec![
-        TermLogger::new(LevelFilter::Debug, simplelog::Config::default(), TerminalMode::Stdout),
-    ])
+    CombinedLogger::init(vec![TermLogger::new(
+        LevelFilter::Debug,
+        simplelog::Config::default(),
+        TerminalMode::Stdout,
+    )])
     .unwrap();
 
     // initialize the CSRF protection
@@ -27,7 +29,6 @@ fn main() {
     // awwwww yissssssss
     Iron::new(handler).http("localhost:8080").unwrap();
 }
-
 
 fn index(request: &mut Request) -> IronResult<Response> {
     let mut response = match request.method {

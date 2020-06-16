@@ -1,20 +1,20 @@
 //! Module containing the core functionality for CSRF protection.
 
 use std::collections::HashSet;
+use std::fmt::{self, Debug, Display};
 use std::str;
-use std::fmt::{self, Display, Debug};
 
 use cookie::Cookie;
-use csrf::{CsrfToken, CsrfProtection, CsrfError};
+use csrf::{CsrfError, CsrfProtection, CsrfToken};
 use data_encoding::{BASE64, BASE64URL};
 use iron::error::HttpError;
-use iron::headers::{Header, SetCookie, Cookie as IronCookie, HeaderFormat};
+use iron::headers::{Cookie as IronCookie, Header, HeaderFormat, SetCookie};
 use iron::method;
 use iron::middleware::{AroundMiddleware, Handler};
 use iron::prelude::*;
 use iron::status;
 use time::Duration;
-use urlencoded::{UrlEncodedQuery, UrlEncodedBody};
+use urlencoded::{UrlEncodedBody, UrlEncodedQuery};
 
 /// The name of the cookie for the CSRF validation data and signature.
 pub const CSRF_COOKIE_NAME: &'static str = "csrf";
@@ -93,7 +93,9 @@ pub struct CsrfConfig {
 impl CsrfConfig {
     /// Create a new builder that is initialized with the default configuration.
     pub fn build() -> CsrfConfigBuilder {
-        CsrfConfigBuilder { config: CsrfConfig::default() }
+        CsrfConfigBuilder {
+            config: CsrfConfig::default(),
+        }
     }
 }
 
@@ -252,12 +254,12 @@ impl<P: CsrfProtection, H: Handler> CsrfHandler<P, H> {
 impl<P: CsrfProtection + 'static, H: Handler> Handler for CsrfHandler<P, H> {
     fn handle(&self, mut request: &mut Request) -> IronResult<Response> {
         // before
-        let token_opt = self.extract_csrf_token(&mut request).and_then(|t| {
-            self.protect.parse_token(&t).ok()
-        });
-        let cookie_opt = self.extract_csrf_cookie(&request).and_then(|c| {
-            self.protect.parse_cookie(&c).ok()
-        });
+        let token_opt = self
+            .extract_csrf_token(&mut request)
+            .and_then(|t| self.protect.parse_token(&t).ok());
+        let cookie_opt = self
+            .extract_csrf_cookie(&request)
+            .and_then(|c| self.protect.parse_cookie(&c).ok());
 
         if self.config.protected_methods.contains(&request.method) {
             debug!(
@@ -278,7 +280,8 @@ impl<P: CsrfProtection + 'static, H: Handler> Handler for CsrfHandler<P, H> {
             }
         }
 
-        let (token, csrf_cookie) = self.protect
+        let (token, csrf_cookie) = self
+            .protect
             .generate_token_pair(
                 cookie_opt
                     .and_then(|c| {
@@ -356,23 +359,27 @@ mod tests {
     use iron_test::response::extract_body_to_string;
 
     lazy_static! {
-        static ref BODY_METHODS: Vec<method::Method> = vec![method::Post,
-                                                        method::Put,
-                                                        method::Patch,
-                                                        method::Connect,
-                                                        method::Extension("WAT".to_string())];
+        static ref BODY_METHODS: Vec<method::Method> = vec![
+            method::Post,
+            method::Put,
+            method::Patch,
+            method::Connect,
+            method::Extension("WAT".to_string())
+        ];
     }
 
     lazy_static! {
-        static ref ALL_METHODS: Vec<method::Method> = vec![method::Get,
-                                                       method::Post,
-                                                       method::Put,
-                                                       method::Patch,
-                                                       method::Delete,
-                                                       method::Options,
-                                                       method::Connect,
-                                                       method::Trace,
-                                                       method::Extension("WAT".to_string())];
+        static ref ALL_METHODS: Vec<method::Method> = vec![
+            method::Get,
+            method::Post,
+            method::Put,
+            method::Patch,
+            method::Delete,
+            method::Options,
+            method::Connect,
+            method::Trace,
+            method::Extension("WAT".to_string())
+        ];
     }
 
     const TEST_QUERY_PARAM: &'static str = "test-param";
@@ -387,16 +394,16 @@ mod tests {
     #[test]
     fn cookies_and_tokens_can_be_verfied() {
         let protect = AesGcmCsrfProtection::from_key(KEY_32);
-        let (token, cookie) = protect.generate_token_pair(None, 300).expect(
-            "couldn't generate token/cookie pair",
-        );
-        let token = BASE64.decode(token.b64_string().as_bytes()).expect(
-            "token not base64",
-        );
+        let (token, cookie) = protect
+            .generate_token_pair(None, 300)
+            .expect("couldn't generate token/cookie pair");
+        let token = BASE64
+            .decode(token.b64_string().as_bytes())
+            .expect("token not base64");
         let token = protect.parse_token(&token).expect("token not parsed");
-        let cookie = BASE64.decode(cookie.b64_string().as_bytes()).expect(
-            "cookie not base64",
-        );
+        let cookie = BASE64
+            .decode(cookie.b64_string().as_bytes())
+            .expect("cookie not base64");
         let cookie = protect.parse_cookie(&cookie).expect("cookie not parsed");
         assert!(
             protect.verify_token_pair(&token, &cookie),
@@ -413,12 +420,10 @@ mod tests {
         assert!(CsrfConfig::build().ttl_seconds(-1).finish().is_err());
 
         // empty set of protected methods is not allowed
-        assert!(
-            CsrfConfig::build()
-                .protected_methods(HashSet::new())
-                .finish()
-                .is_err()
-        )
+        assert!(CsrfConfig::build()
+            .protected_methods(HashSet::new())
+            .finish()
+            .is_err())
     }
 
     fn get_middleware() -> CsrfProtectionMiddleware<AesGcmCsrfProtection> {
@@ -431,18 +436,20 @@ mod tests {
         let middleware = get_middleware();
 
         let (token, cookie) = middleware.protect.generate_token_pair(None, 300).unwrap();
-        let token = BASE64.decode(token.b64_string().as_bytes()).expect(
-            "token not base64",
-        );
-        let token = middleware.protect.parse_token(&token).expect(
-            "token not parsed",
-        );
-        let cookie = BASE64.decode(cookie.b64_string().as_bytes()).expect(
-            "cookie not base64",
-        );
-        let cookie = middleware.protect.parse_cookie(&cookie).expect(
-            "cookie not parsed",
-        );
+        let token = BASE64
+            .decode(token.b64_string().as_bytes())
+            .expect("token not base64");
+        let token = middleware
+            .protect
+            .parse_token(&token)
+            .expect("token not parsed");
+        let cookie = BASE64
+            .decode(cookie.b64_string().as_bytes())
+            .expect("cookie not base64");
+        let cookie = middleware
+            .protect
+            .parse_cookie(&cookie)
+            .expect("cookie not parsed");
 
         assert!(middleware.protect.verify_token_pair(&token, &cookie));
     }
@@ -452,9 +459,9 @@ mod tests {
         let middleware = get_middleware();
 
         let (token, _) = middleware.protect.generate_token_pair(None, 300).unwrap();
-        let mut token = BASE64.decode(token.b64_string().as_bytes()).expect(
-            "token not base64",
-        );
+        let mut token = BASE64
+            .decode(token.b64_string().as_bytes())
+            .expect("token not base64");
 
         // flip a bit in the padding
         token[0] = token[0] ^ 0x01;
@@ -477,9 +484,9 @@ mod tests {
         let middleware = get_middleware();
 
         let (_, cookie) = middleware.protect.generate_token_pair(None, 300).unwrap();
-        let mut cookie = BASE64.decode(cookie.b64_string().as_bytes()).expect(
-            "cookie not base64",
-        );
+        let mut cookie = BASE64
+            .decode(cookie.b64_string().as_bytes())
+            .expect("cookie not base64");
 
         // flip a bit in the padding
         cookie[0] = cookie[0] ^ 0x01;
@@ -503,19 +510,21 @@ mod tests {
 
         let (token, cookie) = middleware.protect.generate_token_pair(None, 0).unwrap();
 
-        let token = BASE64.decode(token.b64_string().as_bytes()).expect(
-            "token not base64",
-        );
-        let token = middleware.protect.parse_token(&token).expect(
-            "token not parsed",
-        );
+        let token = BASE64
+            .decode(token.b64_string().as_bytes())
+            .expect("token not base64");
+        let token = middleware
+            .protect
+            .parse_token(&token)
+            .expect("token not parsed");
 
-        let cookie = BASE64.decode(cookie.b64_string().as_bytes()).expect(
-            "cookie not base64",
-        );
-        let cookie = middleware.protect.parse_cookie(&cookie).expect(
-            "cookie not parsed",
-        );
+        let cookie = BASE64
+            .decode(cookie.b64_string().as_bytes())
+            .expect("cookie not base64");
+        let cookie = middleware
+            .protect
+            .parse_cookie(&cookie)
+            .expect("cookie not parsed");
 
         assert!(!middleware.protect.verify_token_pair(&token, &cookie));
     }
@@ -527,19 +536,21 @@ mod tests {
         let (token, _) = middleware.protect.generate_token_pair(None, 300).unwrap();
         let (_, cookie) = middleware.protect.generate_token_pair(None, 300).unwrap();
 
-        let token = BASE64.decode(token.b64_string().as_bytes()).expect(
-            "token not base64",
-        );
-        let token = middleware.protect.parse_token(&token).expect(
-            "token not parsed",
-        );
+        let token = BASE64
+            .decode(token.b64_string().as_bytes())
+            .expect("token not base64");
+        let token = middleware
+            .protect
+            .parse_token(&token)
+            .expect("token not parsed");
 
-        let cookie = BASE64.decode(cookie.b64_string().as_bytes()).expect(
-            "cookie not base64",
-        );
-        let cookie = middleware.protect.parse_cookie(&cookie).expect(
-            "cookie not parsed",
-        );
+        let cookie = BASE64
+            .decode(cookie.b64_string().as_bytes())
+            .expect("cookie not base64");
+        let cookie = middleware
+            .protect
+            .parse_cookie(&cookie)
+            .expect("cookie not parsed");
 
         assert!(!middleware.protect.verify_token_pair(&token, &cookie));
     }
@@ -577,9 +588,9 @@ mod tests {
             .unwrap_or("<no token>".to_string());
 
         if BODY_METHODS.contains(&request.method) {
-            let form_data = request.get_ref::<UrlEncodedQuery>().expect(
-                "no url encoded query",
-            );
+            let form_data = request
+                .get_ref::<UrlEncodedQuery>()
+                .expect("no url encoded query");
 
             assert_eq!(
                 form_data.get(TEST_QUERY_PARAM),
@@ -599,9 +610,9 @@ mod tests {
             .unwrap_or("<no token>".to_string());
 
         if BODY_METHODS.contains(&request.method) {
-            let form_data = request.get_ref::<UrlEncodedBody>().expect(
-                "not url form encoded",
-            );
+            let form_data = request
+                .get_ref::<UrlEncodedBody>()
+                .expect("not url form encoded");
 
             assert_eq!(
                 form_data.get(TEST_QUERY_PARAM),
@@ -664,8 +675,8 @@ mod tests {
         let response = mock_request::head(path, headers.clone(), &handler).unwrap();
         assert_eq!(response.status, Some(status::Ok));
 
-        let response = mock_request::request(method::Trace, path, body, headers.clone(), &handler)
-            .unwrap();
+        let response =
+            mock_request::request(method::Trace, path, body, headers.clone(), &handler).unwrap();
         assert_eq!(response.status, Some(status::Ok));
 
         let response =
@@ -678,7 +689,8 @@ mod tests {
             body,
             headers.clone(),
             &handler,
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(response.status, Some(status::Ok));
 
         let response = mock_request::post(path, headers.clone(), body, &handler).unwrap();
@@ -705,8 +717,8 @@ mod tests {
         let body = "";
 
         for verb in ALL_METHODS.iter().cloned() {
-            let response = mock_request::request(verb, path, body, headers.clone(), &handler)
-                .unwrap();
+            let response =
+                mock_request::request(verb, path, body, headers.clone(), &handler).unwrap();
             assert_eq!(response.status, Some(status::Ok));
         }
     }
@@ -727,8 +739,8 @@ mod tests {
         let body = "";
 
         for verb in ALL_METHODS.iter().cloned() {
-            let response = mock_request::request(verb, path, body, headers.clone(), &handler)
-                .unwrap();
+            let response =
+                mock_request::request(verb, path, body, headers.clone(), &handler).unwrap();
             assert_eq!(response.status, Some(status::Ok));
         }
     }
@@ -753,8 +765,8 @@ mod tests {
         let body = body.as_str();
 
         for verb in BODY_METHODS.iter().cloned() {
-            let response = mock_request::request(verb, path, body, headers.clone(), &handler)
-                .unwrap();
+            let response =
+                mock_request::request(verb, path, body, headers.clone(), &handler).unwrap();
             assert_eq!(response.status, Some(status::Ok));
         }
     }
@@ -765,20 +777,17 @@ mod tests {
         let handler = middleware.around(Box::new(mock_cookie_handler));
 
         let response = mock_request::get("http://localhost/", Headers::new(), &handler).unwrap();
-        let set_cookie = response.headers.get::<SetCookie>().expect(
-            "SetCookie header not set",
-        );
+        let set_cookie = response
+            .headers
+            .get::<SetCookie>()
+            .expect("SetCookie header not set");
 
         assert!(set_cookie.0.len() == 2);
-        assert!(
-            set_cookie
-                .0
-                .iter()
-                .find(|c| {
-                    c.contains(TEST_COOKIE_NAME) && c.contains(TEST_COOKIE_VALUE)
-                })
-                .is_some()
-        )
+        assert!(set_cookie
+            .0
+            .iter()
+            .find(|c| { c.contains(TEST_COOKIE_NAME) && c.contains(TEST_COOKIE_VALUE) })
+            .is_some())
     }
 
     #[test]
@@ -814,8 +823,8 @@ mod tests {
         let mut headers = Headers::new();
         headers.set(IronCookie(vec![cookie]));
         let body = "";
-        let resp = mock_request::request(method::Post, path, body, headers.clone(), &handler_1)
-            .unwrap();
+        let resp =
+            mock_request::request(method::Post, path, body, headers.clone(), &handler_1).unwrap();
         assert_eq!(resp.status, Some(status::Ok));
 
         // test the cookie/token against the multi handler
@@ -838,8 +847,8 @@ mod tests {
         let mut headers = Headers::new();
         headers.set(IronCookie(vec![cookie]));
         let body = "";
-        let resp = mock_request::request(method::Post, path, body, headers.clone(), &handler_2)
-            .unwrap();
+        let resp =
+            mock_request::request(method::Post, path, body, headers.clone(), &handler_2).unwrap();
         assert_eq!(resp.status, Some(status::Ok));
     }
 
